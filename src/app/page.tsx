@@ -263,6 +263,31 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
     frn = Math.max(0, frn);
     eq = Math.max(0, eq);
 
+    // === MARGIN CAP ENFORCEMENT ===
+    // After all flows, ensure margin doesn't exceed 90% FRN + 50% equity
+    const finalMarginCap = frn * 0.9 + eq * 0.5;
+    if (margin > finalMarginCap) {
+      const excess = margin - finalMarginCap;
+      // Must pay down excess — take from ABN first
+      const abnPaydown = Math.min(excess, abn);
+      abn -= abnPaydown;
+      margin -= abnPaydown;
+      // If still over cap and have equity, forced liquidation of equity
+      if (margin > finalMarginCap) {
+        const stillOver = margin - finalMarginCap;
+        // Selling equity reduces both equity and margin
+        // But selling $X of equity also reduces the cap by 0.5*X
+        // So we need to sell enough that: margin - sold = 0.9*frn + 0.5*(eq - sold)
+        // margin - sold = 0.9*frn + 0.5*eq - 0.5*sold
+        // margin - 0.5*sold = 0.9*frn + 0.5*eq
+        // 0.5*sold = margin - 0.9*frn - 0.5*eq
+        // sold = 2 * (margin - 0.9*frn - 0.5*eq)
+        const eqToSell = Math.min(eq, 2 * stillOver);
+        eq -= eqToSell;
+        margin -= eqToSell; // proceeds pay down margin
+      }
+    }
+
     const endingBalance = frn + eq + abn + kelly401k + karl401k - margin;
     const totalIncome = frnInterest + dividends - marginInt + karlSsi + kellySsi;
 
