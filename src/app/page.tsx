@@ -613,7 +613,7 @@ export default function Home() {
               <thead className="sticky top-0 z-30">
                 <tr className="bg-slate-900 text-white">
                   {[
-                    "Age", "Year", "Karl SSI", "Kelly SSI", "Kelly 401k Bal", "Karl 401k Bal", "FRN Bal", "FRN Interest", "Equity Bal", "Dividends", "Eq Growth", "Margin Bal", "Margin Int", "ABN Bal", "ABN Earnings", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Net Wealth CHF", "CH: Cantonal Basic Tax", "CH: Municipal Tax", "CH: Total Wealth Tax CHF", "CH: Wealth Tax USD", "CH: Investment Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
+                    "Age", "Year", "Karl SSI", "Kelly SSI", "Kelly 401k Bal", "Karl 401k Bal", "FRN Bal", "FRN Interest", "Equity Bal", "Dividends", "Eq Growth", "Margin Bal", "Margin %", "Margin Int", "ABN Bal", "ABN Earnings", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Net Wealth CHF", "CH: Cantonal Basic Tax", "CH: Municipal Tax", "CH: Total Wealth Tax CHF", "CH: Wealth Tax USD", "CH: Investment Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
                   ].map((h, i) => (
                     <th
                       key={h}
@@ -639,6 +639,7 @@ export default function Home() {
                     <td className="px-2 py-1">{usd(r.dividends)}</td>
                     <td className="px-2 py-1">{usd(r.eqGrowth)}</td>
                     <td className="px-2 py-1">{usd(-r.marginBal)}</td>
+                    <td className="px-2 py-1">{((r.marginBal / (r.frnBal + r.equityBal)) * 100).toFixed(1)}%</td>
                     <td className="px-2 py-1">{usd(-r.marginInt)}</td>
                     <td className="px-2 py-1">{usd(r.abnBal)}</td>
                     <td className="px-2 py-1">{usd(r.abnEarnings)}</td>
