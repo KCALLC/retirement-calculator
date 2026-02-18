@@ -374,6 +374,8 @@ export default function Home() {
   const [baseWithdrawal, setBaseWithdrawal] = useState(0);
   const [tab, setTab] = useState<"summary" | "detail">("summary");
   const [inputsOpen, setInputsOpen] = useState(true);
+  const [manualWithdrawal, setManualWithdrawal] = useState<number | null>(null);
+  const [autoSolve, setAutoSolve] = useState(true);
 
   useEffect(() => {
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
@@ -381,13 +383,17 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!autoSolve) return;
     const t = setTimeout(() => {
-      setBaseWithdrawal(solveBaseWithdrawal(inputs));
+      const solved = solveBaseWithdrawal(inputs);
+      setBaseWithdrawal(solved);
+      setManualWithdrawal(null);
     }, 300);
     return () => clearTimeout(t);
-  }, [inputs]);
+  }, [inputs, autoSolve]);
 
-  const rows = useMemo(() => runProjection(inputs, baseWithdrawal), [inputs, baseWithdrawal]);
+  const effectiveWithdrawal = manualWithdrawal ?? baseWithdrawal;
+  const rows = useMemo(() => runProjection(inputs, effectiveWithdrawal), [inputs, effectiveWithdrawal]);
 
   const bands = useMemo(() => {
     const defs = [
@@ -435,6 +441,7 @@ export default function Home() {
           </div>
           <div className="mt-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
             US income tax is modeled as ~0 because margin interest deduction offsets dividend/interest income. European taxes are shown in detail.
+            <br/>NL Box 3 (2026-2027): Uses deemed-return system — taxes a fictional 6.04% return on investments regardless of actual income. This makes the tax appear high relative to net cash income. From 2028+, the new regime taxes actual returns (much more favorable with margin deduction).
           </div>
         </header>
 
@@ -500,9 +507,25 @@ export default function Home() {
 
         <section className="mb-4 grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-slate-300 bg-white p-3">
-            <div className="text-xs text-slate-500">Annual After-Tax Income</div>
-            <div className="text-lg font-semibold">{usd(baseWithdrawal)}</div>
-            <div className="text-sm text-slate-600">{usd(baseWithdrawal / 12)}/mo</div>
+            <div className="text-xs text-slate-500">Annual After-Tax Income (base amount)</div>
+            <div className="flex items-center gap-2 mt-1">
+              <input
+                className="w-40 rounded border border-slate-300 px-2 py-1.5 text-lg font-semibold"
+                type="number"
+                value={Math.round(effectiveWithdrawal)}
+                onChange={(e) => {
+                  setAutoSolve(false);
+                  setManualWithdrawal(Number(e.target.value));
+                }}
+              />
+              <button
+                onClick={() => { setAutoSolve(true); setManualWithdrawal(null); }}
+                className={`rounded px-2 py-1.5 text-xs font-medium ${autoSolve ? 'bg-green-100 text-green-800' : 'bg-slate-200 text-slate-700 hover:bg-green-50'}`}
+              >
+                {autoSolve ? '✓ Auto-solving' : 'Auto-solve to $0 @90'}
+              </button>
+            </div>
+            <div className="text-sm text-slate-600 mt-1">{usd(effectiveWithdrawal / 12)}/mo</div>
             <div className="text-xs text-slate-500">Curve: 100% → 90% @70 → 102.6% @80</div>
           </div>
           <div className="rounded-lg border border-slate-300 bg-white p-3">
