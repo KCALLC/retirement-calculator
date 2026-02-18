@@ -151,8 +151,8 @@ function calcZurichWealthTax(chfWealth: number, municipalMultiplier: number) {
   return { basic, municipal, total };
 }
 
-function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
-  const rows: YearRow[] = [];
+function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' | 'CH') {
+  const results: { tax: number; frnBal: number; eqBal: number; marginBal: number; abnBal: number; kelly401k: number; karl401k: number; endingBalance: number; frnInterest: number; dividends: number; eqGrowth: number; marginInt: number; abnEarnings: number; karlSsi: number; kellySsi: number; totalIncome: number; withdrawal: number; nlDeemedOrActual: number; nlMarginDeduction: number; nlTaxable: number; chNetWealthUsd: number; chNetWealthChf: number; chCantonalBasicTax: number; chMunicipalTax: number; chTotalWealthTaxChf: number; chWealthTaxUsd: number; chInvestmentIncome: number; chIncomeTax: number }[] = [];
 
   let frn = inputs.frnBalance;
   let eq = inputs.equitiesBalance;
@@ -165,141 +165,127 @@ function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
   for (let year = START_YEAR; year <= END_YEAR; year++) {
     const age = year - 1967;
 
-    const frnInterest = frn * (inputs.frnRate / 100); // Cash income, NOT reinvested into FRN
-    const dividends = eq * (inputs.dividendYield / 100); // Cash income, NOT added to equity balance
-    const eqGrowth = eq * (inputs.equityGrowthRate / 100); // Growth IS added to equity balance
-    const marginInt = margin * (inputs.marginRate / 100); // Capitalizes onto margin loan
-    const abnRate = (inputs.dividendYield + inputs.equityGrowthRate) / 100; // ABN earns at combined div + growth rate
-    const abnEarnings = abn * abnRate; // Reinvested into ABN balance
-
+    const frnInterest = frn * (inputs.frnRate / 100);
+    const dividends = eq * (inputs.dividendYield / 100);
+    const eqGrowth = eq * (inputs.equityGrowthRate / 100);
+    const marginInt = margin * (inputs.marginRate / 100);
+    const abnRate = (inputs.dividendYield + inputs.equityGrowthRate) / 100;
+    const abnEarnings = abn * abnRate;
     const kelly401kEarn = kelly401k * (inputs.k401kGrowthRate / 100);
     const karl401kEarn = karl401k * (inputs.k401kGrowthRate / 100);
-
     const karlSsi = age >= 70 ? inputs.karlSsiMonthly * 12 * (inputs.ssiHaircut / 100) : 0;
     const kellySsi = age >= 70 ? inputs.kellySsiMonthly * 12 * (inputs.ssiHaircut / 100) : 0;
 
-    const nlPre2028 = year < 2028;
-    const deemedOrActual = nlPre2028
-      ? (frn + eq) * 0.0604
-      : frnInterest + dividends + eqGrowth;
-    const marginDeduction = nlPre2028 ? margin * 0.0247 : marginInt;
-    const taxableBeforeAllowance = deemedOrActual - marginDeduction;
-    const taxableWithAllowance = taxableBeforeAllowance - NL_ALLOWANCE;
-    const netTaxableAfterLoss = taxableWithAllowance - nlLossCarryforward;
-    const nlTaxable = Math.max(0, netTaxableAfterLoss);
-    nlLossCarryforward = Math.max(0, -netTaxableAfterLoss);
-    const nlBox3Tax = nlTaxable * NL_TAX_RATE;
-    const nlFtcCredit = nlBox3Tax;
+    // Determine which tax applies this year
+    const chTaxApplies = scenario === 'CH' && inputs.moveYear !== null && year >= inputs.moveYear;
+    const useNLTax = scenario === 'NL' || !chTaxApplies;
 
-    const totalAssetsBeforeWithdrawal = frn + eq + abn + kelly401k + karl401k;
-    const netWealthUsd = Math.max(0, totalAssetsBeforeWithdrawal - margin);
-    const netWealthChf = netWealthUsd * inputs.usdChf;
-    const wealth = calcZurichWealthTax(netWealthChf, inputs.zurichMultiplier);
-    const totalWealthTaxUsd = wealth.total / Math.max(inputs.usdChf, 0.0001);
+    let tax = 0;
+    let nlDeemedOrActual = 0, nlMarginDeduction = 0, nlTaxable = 0;
+    let chNetWealthUsd = 0, chNetWealthChf = 0, chCantonalBasicTax = 0, chMunicipalTax = 0, chTotalWealthTaxChf = 0, chWealthTaxUsd = 0, chInvestmentIncome = 0, chIncomeTax = 0;
 
-    const chInvestmentIncome = frnInterest + dividends;
-    const chIncomeTax = Math.max(0, chInvestmentIncome * CH_INVESTMENT_TAX_RATE);
-    const chTaxIfInCH = totalWealthTaxUsd + chIncomeTax;
-    const chTaxApplies = inputs.moveYear !== null && year >= inputs.moveYear;
-    const chTotalTax = chTaxApplies ? chTaxIfInCH : nlBox3Tax;
+    if (useNLTax) {
+      const nlPre2028 = year < 2028;
+      nlDeemedOrActual = nlPre2028 ? (frn + eq) * 0.0604 : frnInterest + dividends + eqGrowth;
+      nlMarginDeduction = nlPre2028 ? margin * 0.0247 : marginInt;
+      const taxableBeforeAllowance = nlDeemedOrActual - nlMarginDeduction;
+      const taxableWithAllowance = taxableBeforeAllowance - NL_ALLOWANCE;
+      const netTaxableAfterLoss = taxableWithAllowance - nlLossCarryforward;
+      nlTaxable = Math.max(0, netTaxableAfterLoss);
+      nlLossCarryforward = Math.max(0, -netTaxableAfterLoss);
+      tax = nlTaxable * NL_TAX_RATE;
+    } else {
+      // CH tax
+      const totalAssets = frn + eq + abn + kelly401k + karl401k;
+      chNetWealthUsd = Math.max(0, totalAssets - margin);
+      chNetWealthChf = chNetWealthUsd * inputs.usdChf;
+      const wealth = calcZurichWealthTax(chNetWealthChf, inputs.zurichMultiplier);
+      chCantonalBasicTax = wealth.basic;
+      chMunicipalTax = wealth.municipal;
+      chTotalWealthTaxChf = wealth.total;
+      chWealthTaxUsd = wealth.total / Math.max(inputs.usdChf, 0.0001);
+      chInvestmentIncome = frnInterest + dividends;
+      chIncomeTax = Math.max(0, chInvestmentIncome * CH_INVESTMENT_TAX_RATE);
+      tax = chWealthTaxUsd + chIncomeTax;
+    }
 
     const withdrawal = baseWithdrawal * getCurveMultiplier(age);
 
-    // Apply growth to balances
-    // FRN: balance stays CONSTANT (interest is cash, not reinvested)
-    // Equity: grows by growth rate (dividends are cash, not reinvested)
+    // Apply growth
     eq += eqGrowth;
-    // ABN: earnings reinvested into balance
     abn += abnEarnings;
-    // 401k: earnings compound
     kelly401k += kelly401kEarn;
     karl401k += karl401kEarn;
-    // Margin: interest capitalizes (increases the loan)
     margin += marginInt;
 
-    // Liquidation: withdrawals come from JPM margin (increasing it) and ABN
-    // But margin can't exceed: 90% of FRN + 50% of equities
-    const jpmShare = inputs.jpmWithdrawalShare / 100;
-    const abnShare = 1 - jpmShare;
-    let jpmDraw = withdrawal * jpmShare;
-    let abnDraw = withdrawal * abnShare;
+    // Tax is paid — increases margin (it's a cash outflow funded same as withdrawals)
+    margin += tax * (inputs.jpmWithdrawalShare / 100);
+    abn -= tax * (1 - inputs.jpmWithdrawalShare / 100);
+    abn = Math.max(0, abn);
 
-    // Check margin cap: 90% FRN + 50% equities
+    // Withdrawals: 70% from margin, 30% from ABN
+    const jpmShare = inputs.jpmWithdrawalShare / 100;
+    let jpmDraw = withdrawal * jpmShare;
+    let abnDraw = withdrawal * (1 - jpmShare);
+
     const marginCap = frn * 0.9 + eq * 0.5;
-    const proposedMargin = margin + jpmDraw;
-    if (proposedMargin > marginCap) {
-      // Can't borrow this much — cap the JPM draw, take rest from ABN
-      const maxAdditionalMargin = Math.max(0, marginCap - margin);
-      jpmDraw = maxAdditionalMargin;
+    if (margin + jpmDraw > marginCap) {
+      const maxAdd = Math.max(0, marginCap - margin);
+      jpmDraw = maxAdd;
       abnDraw = withdrawal - jpmDraw;
     }
-
-    // ABN can't go negative — if it would, reduce the draw
     if (abnDraw > abn) {
       abnDraw = Math.max(0, abn);
-      // Remaining shortfall — try to take from margin if cap allows
       const shortfall = withdrawal - jpmDraw - abnDraw;
-      const additionalMarginRoom = Math.max(0, marginCap - margin - jpmDraw);
-      jpmDraw += Math.min(shortfall, additionalMarginRoom);
+      const room = Math.max(0, marginCap - margin - jpmDraw);
+      jpmDraw += Math.min(shortfall, room);
     }
 
     margin += jpmDraw;
     abn = Math.max(0, abn - abnDraw);
-
-    // Floor: FRN and equities can never go negative
     frn = Math.max(0, frn);
     eq = Math.max(0, eq);
 
-    const endingBalanceCore = frn + eq + abn - margin;
-    const endingBalanceNL = endingBalanceCore + kelly401k + karl401k - nlBox3Tax;
-    const endingBalanceCH = endingBalanceCore + kelly401k + karl401k - chTotalTax;
+    const endingBalance = frn + eq + abn + kelly401k + karl401k - margin;
+    const totalIncome = frnInterest + dividends - marginInt + karlSsi + kellySsi;
 
-    const totalIncome =
-      frnInterest +
-      dividends -
-      marginInt +
-      karlSsi +
-      kellySsi;
+    results.push({ tax, frnBal: frn, eqBal: eq, marginBal: margin, abnBal: abn, kelly401k, karl401k, endingBalance, frnInterest, dividends, eqGrowth, marginInt, abnEarnings, karlSsi, kellySsi, totalIncome, withdrawal, nlDeemedOrActual, nlMarginDeduction, nlTaxable, chNetWealthUsd, chNetWealthChf, chCantonalBasicTax, chMunicipalTax, chTotalWealthTaxChf, chWealthTaxUsd, chInvestmentIncome, chIncomeTax });
+  }
+  return results;
+}
+
+function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
+  const nlResults = runOneScenario(inputs, baseWithdrawal, 'NL');
+  const chResults = runOneScenario(inputs, baseWithdrawal, 'CH');
+  const rows: YearRow[] = [];
+
+  for (let i = 0; i < nlResults.length; i++) {
+    const nl = nlResults[i];
+    const ch = chResults[i];
+    const year = START_YEAR + i;
+    const age = year - 1967;
 
     rows.push({
-      age,
-      year,
-      karlSsi,
-      kellySsi,
-      kelly401kBal: kelly401k,
-      karl401kBal: karl401k,
-      frnBal: frn,
-      frnInterest,
-      equityBal: eq,
-      dividends,
-      eqGrowth,
-      marginBal: margin,
-      marginInt,
-      abnBal: abn,
-      abnEarnings,
-      nlDeemedOrActual: deemedOrActual,
-      nlMarginDeduction: marginDeduction,
-      nlAllowance: NL_ALLOWANCE,
-      nlTaxable,
-      nlTaxRate: NL_TAX_RATE,
-      nlBox3Tax,
-      nlFtcCredit,
-      chNetWealthUsd: netWealthUsd,
-      chNetWealthChf: netWealthChf,
-      chCantonalBasicTax: wealth.basic,
-      chMunicipalTax: wealth.municipal,
-      chTotalWealthTaxChf: wealth.total,
-      chTotalWealthTaxUsd: chTaxApplies ? totalWealthTaxUsd : 0,
-      chInvestmentIncome,
-      chIncomeTax: chTaxApplies ? chIncomeTax : 0,
-      chTotalTax,
-      totalIncome,
-      withdrawal,
-      endingBalanceNL,
-      endingBalanceCH,
+      age, year,
+      karlSsi: nl.karlSsi, kellySsi: nl.kellySsi,
+      kelly401kBal: nl.kelly401k, karl401kBal: nl.karl401k,
+      frnBal: nl.frnBal, frnInterest: nl.frnInterest,
+      equityBal: nl.eqBal, dividends: nl.dividends, eqGrowth: nl.eqGrowth,
+      marginBal: nl.marginBal, marginInt: nl.marginInt,
+      abnBal: nl.abnBal, abnEarnings: nl.abnEarnings,
+      nlDeemedOrActual: nl.nlDeemedOrActual, nlMarginDeduction: nl.nlMarginDeduction,
+      nlAllowance: NL_ALLOWANCE, nlTaxable: nl.nlTaxable,
+      nlTaxRate: NL_TAX_RATE, nlBox3Tax: nl.tax, nlFtcCredit: nl.tax,
+      chNetWealthUsd: ch.chNetWealthUsd, chNetWealthChf: ch.chNetWealthChf,
+      chCantonalBasicTax: ch.chCantonalBasicTax, chMunicipalTax: ch.chMunicipalTax,
+      chTotalWealthTaxChf: ch.chTotalWealthTaxChf,
+      chTotalWealthTaxUsd: ch.chWealthTaxUsd,
+      chInvestmentIncome: ch.chInvestmentIncome, chIncomeTax: ch.chIncomeTax,
+      chTotalTax: ch.tax,
+      totalIncome: nl.totalIncome, withdrawal: nl.withdrawal,
+      endingBalanceNL: nl.endingBalance, endingBalanceCH: ch.endingBalance,
     });
   }
-
   return rows;
 }
 
