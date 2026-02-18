@@ -225,8 +225,8 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
       chMunicipalTax = wealth.municipal;
       chTotalWealthTaxChf = wealth.total;
       chWealthTaxUsd = wealth.total / Math.max(inputs.usdChf, 0.0001);
-      chInvestmentIncome = frnInterest + dividends;
-      chIncomeTax = Math.max(0, chInvestmentIncome * CH_INVESTMENT_TAX_RATE);
+      chInvestmentIncome = Math.max(0, frnInterest + dividends - marginInt); // margin interest deductible against investment income
+      chIncomeTax = chInvestmentIncome * CH_INVESTMENT_TAX_RATE;
       tax = chWealthTaxUsd + chIncomeTax;
     }
 
@@ -663,7 +663,7 @@ export default function Home() {
               <thead className="sticky top-0 z-30">
                 <tr className="bg-slate-900 text-white">
                   {[
-                    "Age", "Year", "Karl SSI", "Kelly SSI", "Kelly 401k Bal", "Kelly 401k Inc", "Karl 401k Bal", "Karl 401k Inc", "FRN Bal", "FRN Interest", "Equity Bal", "Dividends", "Eq Growth", "Margin Bal", "Margin %", "Margin Int", "ABN Bal", "ABN Earnings", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Net Wealth CHF", "CH: Cantonal Basic Tax", "CH: Municipal Tax", "CH: Total Wealth Tax CHF", "CH: Wealth Tax USD", "CH: Investment Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
+                    "Age", "Year", "Karl SSI", "Kelly SSI", "Kelly 401k Bal", "Kelly 401k Inc", "Karl 401k Bal", "Karl 401k Inc", "FRN Bal", "FRN Interest", "Equity Bal", "Dividends", "Eq Growth", "Margin Bal", "Margin %", "Margin Int", "ABN Bal", "ABN Earnings", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Wealth Tax USD", "CH: Net Inv Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
                   ].map((h, i) => (
                     <th
                       key={h}
@@ -703,10 +703,6 @@ export default function Home() {
                     <td className="px-2 py-1">{usd(r.nlBox3Tax)}</td>
                     <td className="px-2 py-1">{usd(r.nlFtcCredit)}</td>
                     <td className="px-2 py-1">{usd(r.chNetWealthUsd)}</td>
-                    <td className="px-2 py-1">{Math.round(r.chNetWealthChf).toLocaleString("en-US")}</td>
-                    <td className="px-2 py-1">{Math.round(r.chCantonalBasicTax).toLocaleString("en-US")}</td>
-                    <td className="px-2 py-1">{Math.round(r.chMunicipalTax).toLocaleString("en-US")}</td>
-                    <td className="px-2 py-1">{Math.round(r.chTotalWealthTaxChf).toLocaleString("en-US")}</td>
                     <td className="px-2 py-1">{usd(r.chTotalWealthTaxUsd)}</td>
                     <td className="px-2 py-1">{usd(r.chInvestmentIncome)}</td>
                     <td className="px-2 py-1">{usd(r.chIncomeTax)}</td>
