@@ -57,6 +57,7 @@ type YearRow = {
   nlTaxable: number;
   nlTaxRate: number;
   nlBox3Tax: number;
+  nlFtcCredit: number;
   chNetWealthUsd: number;
   chNetWealthChf: number;
   chCantonalBasicTax: number;
@@ -340,7 +341,7 @@ function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
       abnBal: nl.abnBal,
       nlDeemedOrActual: nl.nlDeemedOrActual, nlMarginDeduction: nl.nlMarginDeduction,
       nlAllowance: NL_ALLOWANCE, nlTaxable: nl.nlTaxable,
-      nlTaxRate: NL_TAX_RATE, nlBox3Tax: nl.tax,
+      nlTaxRate: NL_TAX_RATE, nlBox3Tax: nl.tax, nlFtcCredit: nl.tax,
       chNetWealthUsd: ch.chNetWealthUsd, chNetWealthChf: ch.chNetWealthChf,
       chCantonalBasicTax: ch.chCantonalBasicTax, chMunicipalTax: ch.chMunicipalTax,
       chTotalWealthTaxChf: ch.chTotalWealthTaxChf,
@@ -675,7 +676,7 @@ export default function Home() {
               <thead className="sticky top-0 z-30">
                 <tr className="bg-slate-900 text-white">
                   {[
-                    "Age", "Year", "Karl SSI Income", "Kelly SSI Income", "Kelly 401k Bal", "Kelly 401k Inc", "Karl 401k Bal", "Karl 401k Inc", "FRN Bal", "FRN Interest", "JPM Equity Bal", "JPM Dividends", "JPM Equity Growth", "JPM Margin Loan Bal", "Margin %", "Margin Int", "ABN Bal", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "CH: Net Wealth USD", "CH: Wealth Tax USD", "CH: Net Inv Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
+                    "Age", "Year", "Karl SSI Income", "Kelly SSI Income", "Kelly 401k Bal", "Kelly 401k Inc", "Karl 401k Bal", "Karl 401k Inc", "FRN Bal", "FRN Interest", "JPM Equity Bal", "JPM Dividends", "JPM Equity Growth", "JPM Margin Loan Bal", "Margin %", "Margin Int", "ABN Bal", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Wealth Tax USD", "CH: Net Inv Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
                   ].map((h, i) => (
                     <th
                       key={h}
@@ -712,6 +713,7 @@ export default function Home() {
                     <td className="px-2 py-1">{usd(r.nlTaxable)}</td>
                     <td className="px-2 py-1">{pct(r.nlTaxRate)}</td>
                     <td className="px-2 py-1">{usd(r.nlBox3Tax)}</td>
+                    <td className="px-2 py-1">{usd(r.nlFtcCredit)}</td>
                     <td className="px-2 py-1">{usd(r.chNetWealthUsd)}</td>
                     <td className="px-2 py-1">{usd(r.chTotalWealthTaxUsd)}</td>
                     <td className="px-2 py-1">{usd(r.chInvestmentIncome)}</td>
