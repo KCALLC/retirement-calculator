@@ -255,6 +255,9 @@ function runOneScenario(
         frn = Math.max(0, frn - liq.value);
       }
     }
+    
+    // Liquidation is a balance sheet event: net proceeds go directly to margin paydown
+    margin = Math.max(0, margin - liquidationProceeds);
 
     const frnInterest = frn * (inputs.frnRate / 100);
     const dividends = eq * (inputs.dividendYield / 100);
@@ -304,14 +307,7 @@ function runOneScenario(
       nlLossCarryforward = Math.max(0, -netTaxableAfterLoss);
       box3TaxForFTC = nlTaxable * NL_TAX_RATE;
       
-      // Apply FTC offset if enabled
-      let finalCapGainsTax = capGainsTax;
-      if (ftcOffsetEnabled && capGainsTax > 0) {
-        const offset = Math.min(capGainsTax, box3TaxForFTC);
-        finalCapGainsTax = capGainsTax - offset;
-      }
-      
-      tax = box3TaxForFTC + finalCapGainsTax;
+      tax = box3TaxForFTC;
     } else {
       // CH tax
       const totalAssets = frn + eq + abn + kelly401k + karl401k;
@@ -324,13 +320,13 @@ function runOneScenario(
       chWealthTaxUsd = wealth.total / Math.max(inputs.usdChf, 0.0001);
       chInvestmentIncome = Math.max(0, frnInterest + dividends - marginInt);
       chIncomeTax = chInvestmentIncome * CH_INVESTMENT_TAX_RATE;
-      tax = chWealthTaxUsd + chIncomeTax + capGainsTax;
+      tax = chWealthTaxUsd + chIncomeTax;
     }
 
     const withdrawal = baseWithdrawal * getCurveMultiplier(age);
 
     // === CASH FLOW WATERFALL ===
-    const totalCashIncome = karlSsi + kellySsi + frnInterest + dividends + kelly401kWithdrawal + karl401kWithdrawal + liquidationProceeds;
+    const totalCashIncome = karlSsi + kellySsi + frnInterest + dividends + kelly401kWithdrawal + karl401kWithdrawal;
 
     const netCashFlow = totalCashIncome - tax - withdrawal;
 
