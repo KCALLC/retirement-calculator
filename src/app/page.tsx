@@ -165,11 +165,12 @@ function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
   for (let year = START_YEAR; year <= END_YEAR; year++) {
     const age = year - 1967;
 
-    const frnInterest = frn * (inputs.frnRate / 100);
-    const dividends = eq * (inputs.dividendYield / 100);
-    const eqGrowth = eq * (inputs.equityGrowthRate / 100);
-    const marginInt = margin * (inputs.marginRate / 100);
-    const abnEarnings = abn * (inputs.abnReturnRate / 100);
+    const frnInterest = frn * (inputs.frnRate / 100); // Cash income, NOT reinvested into FRN
+    const dividends = eq * (inputs.dividendYield / 100); // Cash income, NOT added to equity balance
+    const eqGrowth = eq * (inputs.equityGrowthRate / 100); // Growth IS added to equity balance
+    const marginInt = margin * (inputs.marginRate / 100); // Capitalizes onto margin loan
+    const abnRate = (inputs.dividendYield + inputs.equityGrowthRate) / 100; // ABN earns at combined div + growth rate
+    const abnEarnings = abn * abnRate; // Reinvested into ABN balance
 
     const kelly401kEarn = kelly401k * (inputs.k401kGrowthRate / 100);
     const karl401kEarn = karl401k * (inputs.k401kGrowthRate / 100);
@@ -204,18 +205,17 @@ function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
 
     const withdrawal = baseWithdrawal * getCurveMultiplier(age);
 
-    // Apply income to balances
-    frn += frnInterest;
-    eq += dividends + eqGrowth;
+    // Apply growth to balances
+    // FRN: balance stays CONSTANT (interest is cash, not reinvested)
+    // Equity: grows by growth rate (dividends are cash, not reinvested)
+    eq += eqGrowth;
+    // ABN: earnings reinvested into balance
     abn += abnEarnings;
+    // 401k: earnings compound
     kelly401k += kelly401kEarn;
     karl401k += karl401kEarn;
-
-    // Margin interest increases the margin loan (it's capitalized)
+    // Margin: interest capitalizes (increases the loan)
     margin += marginInt;
-
-    // SSI reduces the needed withdrawal (it's cash income)
-    // 401k earnings compound but aren't withdrawn yet (add withdrawal logic later if needed)
 
     // Liquidation: withdrawals come from JPM margin (increasing it) and ABN
     // But margin can't exceed: 90% of FRN + 50% of equities
@@ -256,14 +256,10 @@ function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
 
     const totalIncome =
       frnInterest +
-      dividends +
-      eqGrowth +
-      abnEarnings +
-      kelly401kEarn +
-      karl401kEarn +
+      dividends -
+      marginInt +
       karlSsi +
-      kellySsi -
-      marginInt;
+      kellySsi;
 
     rows.push({
       age,
@@ -463,7 +459,10 @@ export default function Home() {
               <InputField label="Equity Growth Rate" value={inputs.equityGrowthRate} suffix="%" step={0.01} onChange={(v) => setInputs({ ...inputs, equityGrowthRate: v })} />
               <InputField label="Margin Interest Rate" value={inputs.marginRate} suffix="%" step={0.001} onChange={(v) => setInputs({ ...inputs, marginRate: v })} />
 
-              <InputField label="ABN AMRO Return Rate" value={inputs.abnReturnRate} suffix="%" step={0.01} onChange={(v) => setInputs({ ...inputs, abnReturnRate: v })} />
+              <div className="grid gap-1 text-[13px]">
+                <span className="font-medium text-slate-700">ABN AMRO Return Rate</span>
+                <div className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-600">{(inputs.dividendYield + inputs.equityGrowthRate).toFixed(2)}% (div + growth)</div>
+              </div>
               <InputField label="Kelly 401k Balance" value={inputs.kelly401k} onChange={(v) => setInputs({ ...inputs, kelly401k: v })} />
               <InputField label="Karl 401k Balance" value={inputs.karl401k} onChange={(v) => setInputs({ ...inputs, karl401k: v })} />
               <InputField label="401k Growth Rate" value={inputs.k401kGrowthRate} suffix="%" step={0.01} onChange={(v) => setInputs({ ...inputs, k401kGrowthRate: v })} />
@@ -527,31 +526,38 @@ export default function Home() {
               <table className="min-w-full text-[13px]">
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    {["Band", "Total Income", "Total Tax NL", "Total Tax CH", "Total Withdrawals", "Avg Annual Withdrawal", "Ending Balance NL", "Ending Balance CH"].map((h) => (
-                      <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
+                    {["Age", "Year", "Dividend Income", "Interest Income", "Margin Int Paid", "SSI Income", "Net Income", "Tax (NL)", "Tax (CH)", "Withdrawal", "Ending Bal (NL)", "Ending Bal (CH)"].map((h) => (
+                      <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {bands.map((b) => (
-                    <tr key={b.label} className="border-t border-slate-200">
-                      <td className="px-3 py-2 font-medium">{b.label}</td>
-                      <td className="px-3 py-2">{usd(b.totalIncome)}</td>
-                      <td className="px-3 py-2">{usd(b.totalTaxNL)}</td>
-                      <td className="px-3 py-2">{usd(b.totalTaxCH)}</td>
-                      <td className="px-3 py-2">{usd(b.totalWithdrawal)}</td>
-                      <td className="px-3 py-2">{usd(b.avgWithdrawal)}</td>
-                      <td className="px-3 py-2">{usd(b.endingNL)}</td>
-                      <td className="px-3 py-2">{usd(b.endingCH)}</td>
+                  {rows.map((r) => (
+                    <tr key={r.year} className={`${rowStyle(r)} border-t border-slate-200`}>
+                      <td className="px-3 py-2">{r.age}</td>
+                      <td className="px-3 py-2">{r.year}</td>
+                      <td className="px-3 py-2">{usd(r.dividends)}</td>
+                      <td className="px-3 py-2">{usd(r.frnInterest)}</td>
+                      <td className="px-3 py-2">{usd(-r.marginInt)}</td>
+                      <td className="px-3 py-2">{usd(r.karlSsi + r.kellySsi)}</td>
+                      <td className="px-3 py-2 font-medium">{usd(r.totalIncome)}</td>
+                      <td className="px-3 py-2">{usd(r.nlBox3Tax)}</td>
+                      <td className="px-3 py-2">{usd(r.chTotalTax)}</td>
+                      <td className="px-3 py-2">{usd(r.withdrawal)}</td>
+                      <td className="px-3 py-2 font-semibold">{usd(r.endingBalanceNL)}</td>
+                      <td className="px-3 py-2 font-semibold">{usd(r.endingBalanceCH)}</td>
                     </tr>
                   ))}
                   <tr className="border-t-2 border-slate-900 bg-slate-50 font-semibold">
-                    <td className="px-3 py-2">Lifetime Total</td>
-                    <td className="px-3 py-2">{usd(totals.totalIncome)}</td>
+                    <td className="px-3 py-2" colSpan={2}>Lifetime Total</td>
+                    <td className="px-3 py-2">{usd(rows.reduce((a, r) => a + r.dividends, 0))}</td>
+                    <td className="px-3 py-2">{usd(rows.reduce((a, r) => a + r.frnInterest, 0))}</td>
+                    <td className="px-3 py-2">{usd(-rows.reduce((a, r) => a + r.marginInt, 0))}</td>
+                    <td className="px-3 py-2">{usd(rows.reduce((a, r) => a + r.karlSsi + r.kellySsi, 0))}</td>
+                    <td className="px-3 py-2">{usd(rows.reduce((a, r) => a + r.totalIncome, 0))}</td>
                     <td className="px-3 py-2">{usd(totals.totalTaxNL)}</td>
                     <td className="px-3 py-2">{usd(totals.totalTaxCH)}</td>
                     <td className="px-3 py-2">{usd(totals.totalWithdrawal)}</td>
-                    <td className="px-3 py-2">{usd(totals.avgWithdrawal)}</td>
                     <td className="px-3 py-2">{usd(totals.endingNL)}</td>
                     <td className="px-3 py-2">{usd(totals.endingCH)}</td>
                   </tr>
@@ -606,8 +612,8 @@ export default function Home() {
                     <td className="px-2 py-1">{usd(r.equityBal)}</td>
                     <td className="px-2 py-1">{usd(r.dividends)}</td>
                     <td className="px-2 py-1">{usd(r.eqGrowth)}</td>
-                    <td className="px-2 py-1">{usd(r.marginBal)}</td>
-                    <td className="px-2 py-1">{usd(r.marginInt)}</td>
+                    <td className="px-2 py-1">{usd(-r.marginBal)}</td>
+                    <td className="px-2 py-1">{usd(-r.marginInt)}</td>
                     <td className="px-2 py-1">{usd(r.abnBal)}</td>
                     <td className="px-2 py-1">{usd(r.abnEarnings)}</td>
                     <td className="px-2 py-1">{usd(r.nlDeemedOrActual)}</td>
