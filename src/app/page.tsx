@@ -51,14 +51,12 @@ type YearRow = {
   marginBal: number;
   marginInt: number;
   abnBal: number;
-  abnEarnings: number;
   nlDeemedOrActual: number;
   nlMarginDeduction: number;
   nlAllowance: number;
   nlTaxable: number;
   nlTaxRate: number;
   nlBox3Tax: number;
-  nlFtcCredit: number;
   chNetWealthUsd: number;
   chNetWealthChf: number;
   chCantonalBasicTax: number;
@@ -339,10 +337,10 @@ function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
       frnBal: nl.frnBal, frnInterest: nl.frnInterest,
       equityBal: nl.eqBal, dividends: nl.dividends, eqGrowth: nl.eqGrowth,
       marginBal: nl.marginBal, marginInt: nl.marginInt,
-      abnBal: nl.abnBal, abnEarnings: nl.abnEarnings,
+      abnBal: nl.abnBal,
       nlDeemedOrActual: nl.nlDeemedOrActual, nlMarginDeduction: nl.nlMarginDeduction,
       nlAllowance: NL_ALLOWANCE, nlTaxable: nl.nlTaxable,
-      nlTaxRate: NL_TAX_RATE, nlBox3Tax: nl.tax, nlFtcCredit: nl.tax,
+      nlTaxRate: NL_TAX_RATE, nlBox3Tax: nl.tax,
       chNetWealthUsd: ch.chNetWealthUsd, chNetWealthChf: ch.chNetWealthChf,
       chCantonalBasicTax: ch.chCantonalBasicTax, chMunicipalTax: ch.chMunicipalTax,
       chTotalWealthTaxChf: ch.chTotalWealthTaxChf,
@@ -356,14 +354,14 @@ function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
   return rows;
 }
 
-function solveBaseWithdrawal(inputs: Inputs) {
+function solveBaseWithdrawal(inputs: Inputs, target: 'NL' | 'CH') {
   let low = 0;
   let high = 2_000_000;
   let best = 0;
   for (let i = 0; i < 80; i++) {
     const mid = (low + high) / 2;
     const rows = runProjection(inputs, mid);
-    const end = rows.at(-1)?.endingBalanceNL ?? 0;
+    const end = target === 'NL' ? (rows.at(-1)?.endingBalanceNL ?? 0) : (rows.at(-1)?.endingBalanceCH ?? 0);
     best = mid;
     if (Math.abs(end) < 10) return mid;
     if (end > 0) {
@@ -429,6 +427,7 @@ export default function Home() {
   const [inputsOpen, setInputsOpen] = useState(true);
   const [manualWithdrawal, setManualWithdrawal] = useState<number | null>(null);
   const [autoSolve, setAutoSolve] = useState(true);
+  const [solveTarget, setSolveTarget] = useState<'NL' | 'CH'>('NL');
 
   useEffect(() => {
     const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
@@ -438,12 +437,12 @@ export default function Home() {
   useEffect(() => {
     if (!autoSolve) return;
     const t = setTimeout(() => {
-      const solved = solveBaseWithdrawal(inputs);
+      const solved = solveBaseWithdrawal(inputs, solveTarget);
       setBaseWithdrawal(solved);
       setManualWithdrawal(null);
     }, 300);
     return () => clearTimeout(t);
-  }, [inputs, autoSolve]);
+  }, [inputs, autoSolve, solveTarget]);
 
   const effectiveWithdrawal = manualWithdrawal ?? baseWithdrawal;
   const rows = useMemo(() => runProjection(inputs, effectiveWithdrawal), [inputs, effectiveWithdrawal]);
@@ -578,6 +577,16 @@ export default function Home() {
               >
                 {autoSolve ? '✓ Auto-solving' : 'Auto-solve to $0 @90'}
               </button>
+              <div className="flex items-center gap-1 ml-2">
+                <button
+                  onClick={() => { setSolveTarget('NL'); setAutoSolve(true); setManualWithdrawal(null); }}
+                  className={`rounded px-2 py-1.5 text-xs font-medium ${solveTarget === 'NL' && autoSolve ? 'bg-blue-100 text-blue-800' : 'bg-slate-200 text-slate-600'}`}
+                >NL</button>
+                <button
+                  onClick={() => { setSolveTarget('CH'); setAutoSolve(true); setManualWithdrawal(null); }}
+                  className={`rounded px-2 py-1.5 text-xs font-medium ${solveTarget === 'CH' && autoSolve ? 'bg-teal-100 text-teal-800' : 'bg-slate-200 text-slate-600'}`}
+                >CH</button>
+              </div>
             </div>
             <div className="text-sm text-slate-600 mt-1">{usd(effectiveWithdrawal / 12)}/mo</div>
             <div className="text-xs text-slate-500">Curve: 100% → 90% @70 → 102.6% @80</div>
@@ -666,7 +675,7 @@ export default function Home() {
               <thead className="sticky top-0 z-30">
                 <tr className="bg-slate-900 text-white">
                   {[
-                    "Age", "Year", "Karl SSI", "Kelly SSI", "Kelly 401k Bal", "Kelly 401k Inc", "Karl 401k Bal", "Karl 401k Inc", "FRN Bal", "FRN Interest", "Equity Bal", "Dividends", "Eq Growth", "Margin Bal", "Margin %", "Margin Int", "ABN Bal", "ABN Earnings", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Wealth Tax USD", "CH: Net Inv Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
+                    "Age", "Year", "Karl SSI Income", "Kelly SSI Income", "Kelly 401k Bal", "Kelly 401k Inc", "Karl 401k Bal", "Karl 401k Inc", "FRN Bal", "FRN Interest", "JPM Equity Bal", "JPM Dividends", "JPM Equity Growth", "JPM Margin Loan Bal", "Margin %", "Margin Int", "ABN Bal", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "CH: Net Wealth USD", "CH: Wealth Tax USD", "CH: Net Inv Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
                   ].map((h, i) => (
                     <th
                       key={h}
@@ -697,14 +706,12 @@ export default function Home() {
                     <td className="px-2 py-1">{((r.marginBal / (r.frnBal + r.equityBal)) * 100).toFixed(1)}%</td>
                     <td className="px-2 py-1">{usd(-r.marginInt)}</td>
                     <td className="px-2 py-1">{usd(r.abnBal)}</td>
-                    <td className="px-2 py-1">{usd(r.abnEarnings)}</td>
                     <td className="px-2 py-1">{usd(r.nlDeemedOrActual)}</td>
                     <td className="px-2 py-1">{usd(r.nlMarginDeduction)}</td>
                     <td className="px-2 py-1">{usd(r.nlAllowance)}</td>
                     <td className="px-2 py-1">{usd(r.nlTaxable)}</td>
                     <td className="px-2 py-1">{pct(r.nlTaxRate)}</td>
                     <td className="px-2 py-1">{usd(r.nlBox3Tax)}</td>
-                    <td className="px-2 py-1">{usd(r.nlFtcCredit)}</td>
                     <td className="px-2 py-1">{usd(r.chNetWealthUsd)}</td>
                     <td className="px-2 py-1">{usd(r.chTotalWealthTaxUsd)}</td>
                     <td className="px-2 py-1">{usd(r.chInvestmentIncome)}</td>
