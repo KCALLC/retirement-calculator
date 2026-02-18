@@ -204,16 +204,51 @@ function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
 
     const withdrawal = baseWithdrawal * getCurveMultiplier(age);
 
+    // Apply income to balances
     frn += frnInterest;
     eq += dividends + eqGrowth;
     abn += abnEarnings;
     kelly401k += kelly401kEarn;
     karl401k += karl401kEarn;
 
+    // Margin interest increases the margin loan (it's capitalized)
+    margin += marginInt;
+
+    // SSI reduces the needed withdrawal (it's cash income)
+    // 401k earnings compound but aren't withdrawn yet (add withdrawal logic later if needed)
+
+    // Liquidation: withdrawals come from JPM margin (increasing it) and ABN
+    // But margin can't exceed: 90% of FRN + 50% of equities
     const jpmShare = inputs.jpmWithdrawalShare / 100;
     const abnShare = 1 - jpmShare;
-    margin += withdrawal * jpmShare;
-    abn -= withdrawal * abnShare;
+    let jpmDraw = withdrawal * jpmShare;
+    let abnDraw = withdrawal * abnShare;
+
+    // Check margin cap: 90% FRN + 50% equities
+    const marginCap = frn * 0.9 + eq * 0.5;
+    const proposedMargin = margin + jpmDraw;
+    if (proposedMargin > marginCap) {
+      // Can't borrow this much — cap the JPM draw, take rest from ABN
+      const maxAdditionalMargin = Math.max(0, marginCap - margin);
+      jpmDraw = maxAdditionalMargin;
+      abnDraw = withdrawal - jpmDraw;
+    }
+
+    // ABN can't go negative — if it would, reduce the draw
+    if (abnDraw > abn) {
+      abnDraw = Math.max(0, abn);
+      // Remaining shortfall — try to take from margin if cap allows
+      const shortfall = withdrawal - jpmDraw - abnDraw;
+      const additionalMarginRoom = Math.max(0, marginCap - margin - jpmDraw);
+      jpmDraw += Math.min(shortfall, additionalMarginRoom);
+    }
+
+    margin += jpmDraw;
+    abn = Math.max(0, abn - abnDraw);
+
+    // Floor: FRN and equities can never go negative
+    frn = Math.max(0, frn);
+    eq = Math.max(0, eq);
 
     const endingBalanceCore = frn + eq + abn - margin;
     const endingBalanceNL = endingBalanceCore + kelly401k + karl401k - nlBox3Tax;
@@ -466,9 +501,10 @@ export default function Home() {
 
         <section className="mb-4 grid gap-3 md:grid-cols-3">
           <div className="rounded-lg border border-slate-300 bg-white p-3">
-            <div className="text-xs text-slate-500">Solved base withdrawal</div>
+            <div className="text-xs text-slate-500">Annual After-Tax Income</div>
             <div className="text-lg font-semibold">{usd(baseWithdrawal)}</div>
-            <div className="text-xs text-slate-500">Curve: 100% / 90% / 102.6%</div>
+            <div className="text-sm text-slate-600">{usd(baseWithdrawal / 12)}/mo</div>
+            <div className="text-xs text-slate-500">Curve: 100% → 90% @70 → 102.6% @80</div>
           </div>
           <div className="rounded-lg border border-slate-300 bg-white p-3">
             <div className="text-xs text-slate-500">Ending balance at age 90 (NL)</div>
