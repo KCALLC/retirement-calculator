@@ -213,7 +213,8 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
 
     // === CASH FLOW WATERFALL ===
     // 1. Total cash income (generated without reducing any balances)
-    const totalCashIncome = karlSsi + kellySsi + kelly401kEarn + karl401kEarn + frnInterest + dividends;
+    // 401k earnings compound internally — NOT available as cash income
+    const totalCashIncome = karlSsi + kellySsi + frnInterest + dividends;
 
     // 2. Subtract tax and withdrawal
     const netCashFlow = totalCashIncome - tax - withdrawal;
