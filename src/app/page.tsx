@@ -608,9 +608,9 @@ export default function Home() {
         )}
 
         {tab === "detail" && (
-          <section className="overflow-x-auto rounded-lg border border-slate-300 bg-white">
+          <section className="overflow-auto rounded-lg border border-slate-300 bg-white" style={{ maxHeight: 'calc(100vh - 280px)' }}>
             <table className="min-w-[2500px] border-collapse text-[13px]">
-              <thead>
+              <thead className="sticky top-0 z-30">
                 <tr className="bg-slate-900 text-white">
                   {[
                     "Age", "Year", "Karl SSI", "Kelly SSI", "Kelly 401k Bal", "Karl 401k Bal", "FRN Bal", "FRN Interest", "Equity Bal", "Dividends", "Eq Growth", "Margin Bal", "Margin Int", "ABN Bal", "ABN Earnings", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Net Wealth CHF", "CH: Cantonal Basic Tax", "CH: Municipal Tax", "CH: Total Wealth Tax CHF", "CH: Wealth Tax USD", "CH: Investment Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
