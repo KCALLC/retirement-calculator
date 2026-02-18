@@ -40,7 +40,9 @@ type YearRow = {
   karlSsi: number;
   kellySsi: number;
   kelly401kBal: number;
+  kelly401kIncome: number;
   karl401kBal: number;
+  karl401kIncome: number;
   frnBal: number;
   frnInterest: number;
   equityBal: number;
@@ -152,7 +154,7 @@ function calcZurichWealthTax(chfWealth: number, municipalMultiplier: number) {
 }
 
 function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' | 'CH') {
-  const results: { tax: number; frnBal: number; eqBal: number; marginBal: number; abnBal: number; kelly401k: number; karl401k: number; endingBalance: number; frnInterest: number; dividends: number; eqGrowth: number; marginInt: number; abnEarnings: number; karlSsi: number; kellySsi: number; totalIncome: number; withdrawal: number; nlDeemedOrActual: number; nlMarginDeduction: number; nlTaxable: number; chNetWealthUsd: number; chNetWealthChf: number; chCantonalBasicTax: number; chMunicipalTax: number; chTotalWealthTaxChf: number; chWealthTaxUsd: number; chInvestmentIncome: number; chIncomeTax: number }[] = [];
+  const results: { tax: number; frnBal: number; eqBal: number; marginBal: number; abnBal: number; kelly401k: number; karl401k: number; kelly401kWithdrawal: number; karl401kWithdrawal: number; endingBalance: number; frnInterest: number; dividends: number; eqGrowth: number; marginInt: number; abnEarnings: number; karlSsi: number; kellySsi: number; totalIncome: number; withdrawal: number; nlDeemedOrActual: number; nlMarginDeduction: number; nlTaxable: number; chNetWealthUsd: number; chNetWealthChf: number; chCantonalBasicTax: number; chMunicipalTax: number; chTotalWealthTaxChf: number; chWealthTaxUsd: number; chInvestmentIncome: number; chIncomeTax: number }[] = [];
 
   let frn = inputs.frnBalance;
   let eq = inputs.equitiesBalance;
@@ -173,6 +175,25 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
     const abnEarnings = abn * abnRate;
     const kelly401kEarn = kelly401k * (inputs.k401kGrowthRate / 100);
     const karl401kEarn = karl401k * (inputs.k401kGrowthRate / 100);
+
+    // 401k withdrawals: draw down to $0 by end of 2037, starting in 2030 (8 years)
+    // PMT to deplete: balance * rate / (1 - (1+rate)^-n) but we need amount that
+    // with continued growth, zeros out. Use: withdrawal = balance * r*(1+r)^n / ((1+r)^n - 1)
+    let kelly401kWithdrawal = 0;
+    let karl401kWithdrawal = 0;
+    if (year >= 2030 && year <= 2037) {
+      const r = inputs.k401kGrowthRate / 100;
+      const remainingYears = 2037 - year + 1; // years left including this one
+      if (r > 0 && remainingYears > 0) {
+        const factor = r * Math.pow(1 + r, remainingYears) / (Math.pow(1 + r, remainingYears) - 1);
+        kelly401kWithdrawal = kelly401k * factor;
+        karl401kWithdrawal = karl401k * factor;
+      } else {
+        kelly401kWithdrawal = kelly401k / Math.max(1, remainingYears);
+        karl401kWithdrawal = karl401k / Math.max(1, remainingYears);
+      }
+    }
+
     const karlSsi = age >= 70 ? inputs.karlSsiMonthly * 12 * (inputs.ssiHaircut / 100) : 0;
     const kellySsi = age >= 70 ? inputs.kellySsiMonthly * 12 * (inputs.ssiHaircut / 100) : 0;
 
@@ -213,8 +234,8 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
 
     // === CASH FLOW WATERFALL ===
     // 1. Total cash income (generated without reducing any balances)
-    // 401k earnings compound internally — NOT available as cash income
-    const totalCashIncome = karlSsi + kellySsi + frnInterest + dividends;
+    // 401k earnings compound internally — withdrawals (2030-2037) ARE cash income
+    const totalCashIncome = karlSsi + kellySsi + frnInterest + dividends + kelly401kWithdrawal + karl401kWithdrawal;
 
     // 2. Subtract tax and withdrawal
     const netCashFlow = totalCashIncome - tax - withdrawal;
@@ -256,9 +277,11 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
     eq += eqGrowth;
     // ABN grows by dividend yield + equity growth rate combined
     abn += abnEarnings;
-    // 401k compounds
-    kelly401k += kelly401kEarn;
-    karl401k += karl401kEarn;
+    // 401k: compound earnings then deduct withdrawals
+    kelly401k += kelly401kEarn - kelly401kWithdrawal;
+    karl401k += karl401kEarn - karl401kWithdrawal;
+    kelly401k = Math.max(0, kelly401k);
+    karl401k = Math.max(0, karl401k);
     // FRN balance stays constant (interest was cash, already counted above)
 
     frn = Math.max(0, frn);
@@ -292,7 +315,7 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
     const endingBalance = frn + eq + abn + kelly401k + karl401k - margin;
     const totalIncome = frnInterest + dividends - marginInt + karlSsi + kellySsi;
 
-    results.push({ tax, frnBal: frn, eqBal: eq, marginBal: margin, abnBal: abn, kelly401k, karl401k, endingBalance, frnInterest, dividends, eqGrowth, marginInt, abnEarnings, karlSsi, kellySsi, totalIncome, withdrawal, nlDeemedOrActual, nlMarginDeduction, nlTaxable, chNetWealthUsd, chNetWealthChf, chCantonalBasicTax, chMunicipalTax, chTotalWealthTaxChf, chWealthTaxUsd, chInvestmentIncome, chIncomeTax });
+    results.push({ tax, frnBal: frn, eqBal: eq, marginBal: margin, abnBal: abn, kelly401k, karl401k, kelly401kWithdrawal, karl401kWithdrawal, endingBalance, frnInterest, dividends, eqGrowth, marginInt, abnEarnings, karlSsi, kellySsi, totalIncome, withdrawal, nlDeemedOrActual, nlMarginDeduction, nlTaxable, chNetWealthUsd, chNetWealthChf, chCantonalBasicTax, chMunicipalTax, chTotalWealthTaxChf, chWealthTaxUsd, chInvestmentIncome, chIncomeTax });
   }
   return results;
 }
@@ -311,7 +334,8 @@ function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
     rows.push({
       age, year,
       karlSsi: nl.karlSsi, kellySsi: nl.kellySsi,
-      kelly401kBal: nl.kelly401k, karl401kBal: nl.karl401k,
+      kelly401kBal: nl.kelly401k, kelly401kIncome: nl.kelly401kWithdrawal,
+      karl401kBal: nl.karl401k, karl401kIncome: nl.karl401kWithdrawal,
       frnBal: nl.frnBal, frnInterest: nl.frnInterest,
       equityBal: nl.eqBal, dividends: nl.dividends, eqGrowth: nl.eqGrowth,
       marginBal: nl.marginBal, marginInt: nl.marginInt,
@@ -639,7 +663,7 @@ export default function Home() {
               <thead className="sticky top-0 z-30">
                 <tr className="bg-slate-900 text-white">
                   {[
-                    "Age", "Year", "Karl SSI", "Kelly SSI", "Kelly 401k Bal", "Karl 401k Bal", "FRN Bal", "FRN Interest", "Equity Bal", "Dividends", "Eq Growth", "Margin Bal", "Margin %", "Margin Int", "ABN Bal", "ABN Earnings", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Net Wealth CHF", "CH: Cantonal Basic Tax", "CH: Municipal Tax", "CH: Total Wealth Tax CHF", "CH: Wealth Tax USD", "CH: Investment Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
+                    "Age", "Year", "Karl SSI", "Kelly SSI", "Kelly 401k Bal", "Kelly 401k Inc", "Karl 401k Bal", "Karl 401k Inc", "FRN Bal", "FRN Interest", "Equity Bal", "Dividends", "Eq Growth", "Margin Bal", "Margin %", "Margin Int", "ABN Bal", "ABN Earnings", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Net Wealth CHF", "CH: Cantonal Basic Tax", "CH: Municipal Tax", "CH: Total Wealth Tax CHF", "CH: Wealth Tax USD", "CH: Investment Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
                   ].map((h, i) => (
                     <th
                       key={h}
@@ -658,7 +682,9 @@ export default function Home() {
                     <td className="px-2 py-1">{usd(r.karlSsi)}</td>
                     <td className="px-2 py-1">{usd(r.kellySsi)}</td>
                     <td className="px-2 py-1">{usd(r.kelly401kBal)}</td>
+                    <td className="px-2 py-1">{r.kelly401kIncome > 0 ? usd(r.kelly401kIncome) : '—'}</td>
                     <td className="px-2 py-1">{usd(r.karl401kBal)}</td>
+                    <td className="px-2 py-1">{r.karl401kIncome > 0 ? usd(r.karl401kIncome) : '—'}</td>
                     <td className="px-2 py-1">{usd(r.frnBal)}</td>
                     <td className="px-2 py-1">{usd(r.frnInterest)}</td>
                     <td className="px-2 py-1">{usd(r.equityBal)}</td>
