@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #020617;
-  --foreground: #e2e8f0;
+  --background: #f1f5f9;
+  --foreground: #0f172a;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: Inter, Arial, Helvetica, sans-serif;
 }
 
 body {
@@ -27,6 +27,6 @@ body {
   }
 
   table {
-    font-size: 10px;
+    font-size: 11px !important;
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
   Legend,
@@ -13,442 +13,593 @@ import {
 } from "recharts";
 
 type Inputs = {
-  startYear: number;
-  currentAge: number;
-  horizonAge: number;
-  annualWithdrawal: number;
-  jpmFrn: number;
-  jpmEquities: number;
-  jpmMargin: number;
+  frnBalance: number;
+  equitiesBalance: number;
+  marginLoan: number;
   abnBalance: number;
   frnRate: number;
-  dividendRate: number;
+  dividendYield: number;
   equityGrowthRate: number;
   marginRate: number;
   abnReturnRate: number;
-  annualKcaIncome: number;
-  kcaIncomeEndAge: number;
-  karlSsiMonthly: number;
-  kellySsiMonthly: number;
-  ssiHaircutPct: number;
   kelly401k: number;
   karl401k: number;
   k401kGrowthRate: number;
-  moveToChYear: number;
+  karlSsiMonthly: number;
+  kellySsiMonthly: number;
+  ssiHaircut: number;
+  jpmWithdrawalShare: number;
+  moveYear: number | null;
   usdChf: number;
   zurichMultiplier: number;
-  nlBox3InvestmentRate: number;
-  nlBox3DebtRate: number;
-  nlBox3TransitionYear: number;
 };
 
-type Row = {
+type YearRow = {
   age: number;
   year: number;
-  beginningBalance: number;
+  karlSsi: number;
+  kellySsi: number;
+  kelly401kBal: number;
+  karl401kBal: number;
+  frnBal: number;
   frnInterest: number;
+  equityBal: number;
   dividends: number;
-  equityGrowth: number;
-  marginInterest: number;
-  kcaIncome: number;
-  ssi: number;
-  k401kWithdrawal: number;
-  tax: number;
-  taxBreakdown: string;
-  withdrawals: number;
-  endingBalance: number;
+  eqGrowth: number;
+  marginBal: number;
+  marginInt: number;
+  abnBal: number;
+  abnEarnings: number;
+  nlDeemedOrActual: number;
+  nlMarginDeduction: number;
+  nlAllowance: number;
+  nlTaxable: number;
+  nlTaxRate: number;
+  nlBox3Tax: number;
+  nlFtcCredit: number;
+  chNetWealthUsd: number;
+  chNetWealthChf: number;
+  chCantonalBasicTax: number;
+  chMunicipalTax: number;
+  chTotalWealthTaxChf: number;
+  chTotalWealthTaxUsd: number;
+  chInvestmentIncome: number;
+  chIncomeTax: number;
+  chTotalTax: number;
+  totalIncome: number;
+  withdrawal: number;
+  endingBalanceNL: number;
+  endingBalanceCH: number;
 };
+
+const START_YEAR = 2026;
+const END_YEAR = 2058;
+const START_AGE = 58;
+const END_AGE = 90;
+const NL_ALLOWANCE = 3600;
+const NL_TAX_RATE = 0.36;
+const CH_INVESTMENT_TAX_RATE = 0.22;
+const WITHDRAWAL_CURVE = [
+  { minAge: 58, maxAge: 69, multiplier: 1 },
+  { minAge: 70, maxAge: 79, multiplier: 0.9 },
+  { minAge: 80, maxAge: 90, multiplier: 1.026 },
+];
 
 const initialInputs: Inputs = {
-  startYear: 2026,
-  currentAge: 58,
-  horizonAge: 92,
-  annualWithdrawal: 300000,
-  jpmFrn: 4_100_069,
-  jpmEquities: 7_731_381,
-  jpmMargin: -6_451_994,
+  frnBalance: 4_100_069,
+  equitiesBalance: 7_731_381,
+  marginLoan: 6_451_994,
   abnBalance: 1_206_187,
   frnRate: 4.34,
-  dividendRate: 2.65,
+  dividendYield: 2.65,
   equityGrowthRate: 2.65,
   marginRate: 5.678,
-  abnReturnRate: 0,
-  annualKcaIncome: 0,
-  kcaIncomeEndAge: 65,
-  karlSsiMonthly: 3750,
-  kellySsiMonthly: 3000,
-  ssiHaircutPct: 80,
-  kelly401k: 0,
-  karl401k: 0,
+  abnReturnRate: 5,
+  kelly401k: 398_054,
+  karl401k: 194_528,
   k401kGrowthRate: 5.3,
-  moveToChYear: 2028,
+  karlSsiMonthly: 3_750,
+  kellySsiMonthly: 3_750,
+  ssiHaircut: 80,
+  jpmWithdrawalShare: 70,
+  moveYear: 2028,
   usdChf: 0.9,
   zurichMultiplier: 1.19,
-  nlBox3InvestmentRate: 6.04,
-  nlBox3DebtRate: 2.47,
-  nlBox3TransitionYear: 2028,
 };
 
-const fmtCurrency = (n: number) =>
-  new Intl.NumberFormat("en-US", {
+const CHF_WEALTH_BRACKETS = [
+  { upTo: 161_000, rate: 0 },
+  { upTo: 403_000, rate: 0.0005 },
+  { upTo: 805_000, rate: 0.001 },
+  { upTo: 1_451_000, rate: 0.0015 },
+  { upTo: 2_418_000, rate: 0.002 },
+  { upTo: 3_385_000, rate: 0.0025 },
+  { upTo: Number.POSITIVE_INFINITY, rate: 0.003 },
+];
+
+function getCurveMultiplier(age: number) {
+  return WITHDRAWAL_CURVE.find((b) => age >= b.minAge && age <= b.maxAge)?.multiplier ?? 1;
+}
+
+function usd(n: number) {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(n);
-
-function dutchBox1TaxCost(income: number): number {
-  if (income <= 0) return 0;
-  const taxable = income * 0.7;
-  if (income > 114_285.72) {
-    return Math.max(0, ((taxable - 80_000) * 0.495) + 30_000);
-  }
-  return Math.max(0, taxable * 0.3697);
 }
 
-function zurichWealthTaxCostUsd(
-  usdNetWealth: number,
-  usdChf: number,
-  multiplier: number
-): number {
-  const chf = Math.max(0, usdNetWealth * usdChf);
-  const brackets = [
-    { upTo: 161_000, rate: 0 },
-    { upTo: 403_000, rate: 0.0005 },
-    { upTo: 805_000, rate: 0.001 },
-    { upTo: 1_451_000, rate: 0.0015 },
-    { upTo: 2_418_000, rate: 0.002 },
-    { upTo: 3_385_000, rate: 0.0025 },
-    { upTo: Number.POSITIVE_INFINITY, rate: 0.003 },
-  ];
+function pct(n: number) {
+  return `${(n * 100).toFixed(2)}%`;
+}
 
+function safe(n: number) {
+  return Number.isFinite(n) ? n : 0;
+}
+
+function calcZurichWealthTax(chfWealth: number, municipalMultiplier: number) {
+  let basic = 0;
   let prev = 0;
-  let tax = 0;
-  for (const b of brackets) {
-    const taxable = Math.max(0, Math.min(chf, b.upTo) - prev);
-    tax += taxable * b.rate;
-    prev = b.upTo;
-    if (chf <= b.upTo) break;
+  for (const bracket of CHF_WEALTH_BRACKETS) {
+    const taxableSlice = Math.max(0, Math.min(chfWealth, bracket.upTo) - prev);
+    basic += taxableSlice * bracket.rate;
+    prev = bracket.upTo;
+    if (chfWealth <= bracket.upTo) break;
   }
-  return (tax * multiplier) / Math.max(usdChf, 0.0001);
+  const municipal = basic * (municipalMultiplier - 1);
+  const total = basic + municipal;
+  return { basic, municipal, total };
 }
 
-function simulate(inputs: Inputs, scenario: "CH" | "NL"): Row[] {
-  const years = inputs.horizonAge - inputs.currentAge + 1;
-  let frn = inputs.jpmFrn;
-  let eq = inputs.jpmEquities;
-  let margin = inputs.jpmMargin;
+function runProjection(inputs: Inputs, baseWithdrawal: number): YearRow[] {
+  const rows: YearRow[] = [];
+
+  let frn = inputs.frnBalance;
+  let eq = inputs.equitiesBalance;
+  let margin = inputs.marginLoan;
   let abn = inputs.abnBalance;
-  let k401k = inputs.kelly401k + inputs.karl401k;
+  let kelly401k = inputs.kelly401k;
+  let karl401k = inputs.karl401k;
+  let nlLossCarryforward = 0;
 
-  const rows: Row[] = [];
+  for (let year = START_YEAR; year <= END_YEAR; year++) {
+    const age = year - 1967;
 
-  for (let i = 0; i < years; i++) {
-    const age = inputs.currentAge + i;
-    const year = inputs.startYear + i;
-
-    const beginningBalance = frn + eq + margin + abn;
     const frnInterest = frn * (inputs.frnRate / 100);
-    const dividends = eq * (inputs.dividendRate / 100);
-    const equityGrowth = eq * (inputs.equityGrowthRate / 100);
-    const marginInterestCost = Math.abs(margin) * (inputs.marginRate / 100);
-    const marginInterest = -marginInterestCost;
-    const abnReturn = abn * (inputs.abnReturnRate / 100);
+    const dividends = eq * (inputs.dividendYield / 100);
+    const eqGrowth = eq * (inputs.equityGrowthRate / 100);
+    const marginInt = margin * (inputs.marginRate / 100);
+    const abnEarnings = abn * (inputs.abnReturnRate / 100);
 
-    const kcaIncome = age <= inputs.kcaIncomeEndAge ? inputs.annualKcaIncome : 0;
-    const ssi =
-      age >= 70
-        ? (inputs.karlSsiMonthly + inputs.kellySsiMonthly) * 12 * (inputs.ssiHaircutPct / 100)
-        : 0;
+    const kelly401kEarn = kelly401k * (inputs.k401kGrowthRate / 100);
+    const karl401kEarn = karl401k * (inputs.k401kGrowthRate / 100);
 
-    k401k = age < 70 ? k401k * (1 + inputs.k401kGrowthRate / 100) : k401k;
-    const k401kWithdrawal = age >= 70 ? Math.min(k401k, inputs.annualWithdrawal * 0.2) : 0;
-    k401k -= k401kWithdrawal;
+    const karlSsi = age >= 70 ? inputs.karlSsiMonthly * 12 * (inputs.ssiHaircut / 100) : 0;
+    const kellySsi = age >= 70 ? inputs.kellySsiMonthly * 12 * (inputs.ssiHaircut / 100) : 0;
 
-    let taxCost = 0;
-    let taxBreakdown = "";
-    const box1 = dutchBox1TaxCost(kcaIncome);
+    const nlPre2028 = year < 2028;
+    const deemedOrActual = nlPre2028
+      ? (frn + eq) * 0.0604
+      : frnInterest + dividends + eqGrowth;
+    const marginDeduction = nlPre2028 ? margin * 0.0247 : marginInt;
+    const taxableBeforeAllowance = deemedOrActual - marginDeduction;
+    const taxableWithAllowance = taxableBeforeAllowance - NL_ALLOWANCE;
+    const netTaxableAfterLoss = taxableWithAllowance - nlLossCarryforward;
+    const nlTaxable = Math.max(0, netTaxableAfterLoss);
+    nlLossCarryforward = Math.max(0, -netTaxableAfterLoss);
+    const nlBox3Tax = nlTaxable * NL_TAX_RATE;
+    const nlFtcCredit = nlBox3Tax;
 
-    if (scenario === "CH") {
-      if (year < inputs.moveToChYear) {
-        taxCost = box1;
-        taxBreakdown = `NL Box 1 on KCA: ${fmtCurrency(box1)}`;
-      } else {
-        const wealth = zurichWealthTaxCostUsd(
-          beginningBalance,
-          inputs.usdChf,
-          inputs.zurichMultiplier
-        );
-        taxCost = box1 + wealth;
-        taxBreakdown = `CH Wealth Tax: ${fmtCurrency(wealth)} + NL Box 1: ${fmtCurrency(box1)}`;
-      }
-    } else {
-      let box3 = 0;
-      if (year < inputs.nlBox3TransitionYear) {
-        const deemed =
-          (Math.max(0, frn + eq + abn) * (inputs.nlBox3InvestmentRate / 100)) -
-          (Math.abs(margin) * (inputs.nlBox3DebtRate / 100)) -
-          3600;
-        box3 = Math.max(0, deemed * 0.36);
-        taxBreakdown = `NL Box 3 deemed: ${fmtCurrency(box3)} + NL Box 1: ${fmtCurrency(box1)}`;
-      } else {
-        const actual = frnInterest + dividends + equityGrowth - marginInterestCost - 3600;
-        box3 = Math.max(0, actual * 0.36);
-        taxBreakdown = `NL Box 3 actual: ${fmtCurrency(box3)} + NL Box 1: ${fmtCurrency(box1)}`;
-      }
-      taxCost = box1 + box3;
-    }
+    const totalAssetsBeforeWithdrawal = frn + eq + abn + kelly401k + karl401k;
+    const netWealthUsd = Math.max(0, totalAssetsBeforeWithdrawal - margin);
+    const netWealthChf = netWealthUsd * inputs.usdChf;
+    const wealth = calcZurichWealthTax(netWealthChf, inputs.zurichMultiplier);
+    const totalWealthTaxUsd = wealth.total / Math.max(inputs.usdChf, 0.0001);
 
-    const withdrawals = inputs.annualWithdrawal;
+    const chInvestmentIncome = frnInterest + dividends;
+    const chIncomeTax = Math.max(0, chInvestmentIncome * CH_INVESTMENT_TAX_RATE);
+    const chTaxIfInCH = totalWealthTaxUsd + chIncomeTax;
+    const chTaxApplies = inputs.moveYear !== null && year >= inputs.moveYear;
+    const chTotalTax = chTaxApplies ? chTaxIfInCH : nlBox3Tax;
 
-    const endingBalance =
-      beginningBalance +
-      frnInterest +
-      dividends +
-      equityGrowth +
-      marginInterest +
-      abnReturn +
-      kcaIncome +
-      ssi +
-      k401kWithdrawal -
-      taxCost -
-      withdrawals;
+    const withdrawal = baseWithdrawal * getCurveMultiplier(age);
 
     frn += frnInterest;
-    eq += dividends + equityGrowth;
-    margin -= marginInterestCost;
-    abn += abnReturn;
+    eq += dividends + eqGrowth;
+    abn += abnEarnings;
+    kelly401k += kelly401kEarn;
+    karl401k += karl401kEarn;
 
-    const portfolioWithdrawal = withdrawals * 0.7;
-    const abnWithdrawal = withdrawals * 0.3;
+    const jpmShare = inputs.jpmWithdrawalShare / 100;
+    const abnShare = 1 - jpmShare;
+    margin += withdrawal * jpmShare;
+    abn -= withdrawal * abnShare;
 
-    const investTotal = Math.max(1, frn + eq);
-    frn -= portfolioWithdrawal * (frn / investTotal);
-    eq -= portfolioWithdrawal * (eq / investTotal);
-    abn -= abnWithdrawal;
+    const endingBalanceCore = frn + eq + abn - margin;
+    const endingBalanceNL = endingBalanceCore + kelly401k + karl401k - nlBox3Tax;
+    const endingBalanceCH = endingBalanceCore + kelly401k + karl401k - chTotalTax;
+
+    const totalIncome =
+      frnInterest +
+      dividends +
+      eqGrowth +
+      abnEarnings +
+      kelly401kEarn +
+      karl401kEarn +
+      karlSsi +
+      kellySsi -
+      marginInt;
 
     rows.push({
       age,
       year,
-      beginningBalance,
+      karlSsi,
+      kellySsi,
+      kelly401kBal: kelly401k,
+      karl401kBal: karl401k,
+      frnBal: frn,
       frnInterest,
+      equityBal: eq,
       dividends,
-      equityGrowth,
-      marginInterest,
-      kcaIncome,
-      ssi,
-      k401kWithdrawal,
-      tax: -taxCost,
-      taxBreakdown,
-      withdrawals: -withdrawals,
-      endingBalance,
+      eqGrowth,
+      marginBal: margin,
+      marginInt,
+      abnBal: abn,
+      abnEarnings,
+      nlDeemedOrActual: deemedOrActual,
+      nlMarginDeduction: marginDeduction,
+      nlAllowance: NL_ALLOWANCE,
+      nlTaxable,
+      nlTaxRate: NL_TAX_RATE,
+      nlBox3Tax,
+      nlFtcCredit,
+      chNetWealthUsd: netWealthUsd,
+      chNetWealthChf: netWealthChf,
+      chCantonalBasicTax: wealth.basic,
+      chMunicipalTax: wealth.municipal,
+      chTotalWealthTaxChf: wealth.total,
+      chTotalWealthTaxUsd: chTaxApplies ? totalWealthTaxUsd : 0,
+      chInvestmentIncome,
+      chIncomeTax: chTaxApplies ? chIncomeTax : 0,
+      chTotalTax,
+      totalIncome,
+      withdrawal,
+      endingBalanceNL,
+      endingBalanceCH,
     });
   }
 
   return rows;
 }
 
-function NumberInput({
+function solveBaseWithdrawal(inputs: Inputs) {
+  let low = 0;
+  let high = 2_000_000;
+  let best = 0;
+  for (let i = 0; i < 80; i++) {
+    const mid = (low + high) / 2;
+    const rows = runProjection(inputs, mid);
+    const end = rows.at(-1)?.endingBalanceNL ?? 0;
+    best = mid;
+    if (Math.abs(end) < 10) return mid;
+    if (end > 0) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return best;
+}
+
+function InputField({
   label,
   value,
   onChange,
+  step = 1,
   min,
   max,
-  step,
+  suffix,
 }: {
   label: string;
   value: number;
-  onChange: (v: number) => void;
+  onChange: (n: number) => void;
+  step?: number;
   min?: number;
   max?: number;
-  step?: number;
+  suffix?: string;
 }) {
   return (
-    <label className="grid gap-1 text-sm">
-      <span className="font-medium text-slate-200">{label}</span>
-      <div className="grid grid-cols-3 items-center gap-2">
+    <label className="grid gap-1 text-[13px]">
+      <span className="font-medium text-slate-700">{label}</span>
+      <div className="flex items-center gap-2">
         <input
-          className="col-span-2"
-          type="range"
-          value={value}
-          min={min}
-          max={max}
-          step={step ?? 1}
-          onChange={(e) => onChange(Number(e.target.value))}
-        />
-        <input
-          className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100"
+          className="w-full rounded border border-slate-300 px-2 py-1.5"
           type="number"
-          value={Number.isFinite(value) ? value : 0}
+          value={safe(value)}
+          onChange={(e) => onChange(Number(e.target.value))}
+          step={step}
           min={min}
           max={max}
-          step={step ?? 1}
-          onChange={(e) => onChange(Number(e.target.value))}
         />
+        {suffix ? <span className="text-xs text-slate-500">{suffix}</span> : null}
       </div>
     </label>
   );
 }
 
-function getStatusClass(row: Row, annualWithdrawal: number) {
-  if (row.endingBalance < annualWithdrawal * 2) return "bg-red-50";
-  if (row.endingBalance < row.beginningBalance) return "bg-amber-50";
-  return "bg-emerald-50";
+function rowStyle(row: YearRow) {
+  if (row.endingBalanceNL > row.endingBalanceCH ? row.endingBalanceCH > 0 : row.endingBalanceNL > 0) {
+    const worstEnding = Math.min(row.endingBalanceNL, row.endingBalanceCH);
+    if (worstEnding < row.withdrawal * 2) return "bg-red-50";
+    const previous = Math.max(0, worstEnding + row.withdrawal);
+    if (worstEnding < previous) return "bg-amber-50";
+    return "bg-emerald-50";
+  }
+  return "bg-red-50";
 }
 
 export default function Home() {
   const [inputs, setInputs] = useState<Inputs>(initialInputs);
+  const [baseWithdrawal, setBaseWithdrawal] = useState(0);
+  const [tab, setTab] = useState<"summary" | "detail">("summary");
+  const [inputsOpen, setInputsOpen] = useState(true);
 
-  const chRows = useMemo(() => simulate(inputs, "CH"), [inputs]);
-  const nlRows = useMemo(() => simulate(inputs, "NL"), [inputs]);
+  useEffect(() => {
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+    setTab(isMobile ? "summary" : "detail");
+  }, []);
 
-  const metrics = useMemo(() => {
-    const chTotalTax = chRows.reduce((a, r) => a + Math.abs(r.tax), 0);
-    const nlTotalTax = nlRows.reduce((a, r) => a + Math.abs(r.tax), 0);
-    const chRunOut = chRows.find((r) => r.endingBalance <= 0)?.year ?? null;
-    const nlRunOut = nlRows.find((r) => r.endingBalance <= 0)?.year ?? null;
-    const avgCh = chTotalTax / chRows.length;
-    const avgNl = nlTotalTax / nlRows.length;
-    let breakEven: number | null = null;
-    let running = 0;
-    for (let i = 0; i < chRows.length; i++) {
-      running += Math.abs(chRows[i].tax) - Math.abs(nlRows[i].tax);
-      if (running > 0) {
-        breakEven = chRows[i].year;
-        break;
-      }
-    }
-    return { chTotalTax, nlTotalTax, chRunOut, nlRunOut, avgCh, avgNl, breakEven };
-  }, [chRows, nlRows]);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setBaseWithdrawal(solveBaseWithdrawal(inputs));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [inputs]);
 
-  const chartData = chRows.map((r, idx) => ({
-    year: r.year,
-    CH: Math.round(r.endingBalance),
-    NL: Math.round(nlRows[idx].endingBalance),
-  }));
+  const rows = useMemo(() => runProjection(inputs, baseWithdrawal), [inputs, baseWithdrawal]);
+
+  const bands = useMemo(() => {
+    const defs = [
+      { key: "pre", label: "2026–2037 (Pre-SSI)", start: 2026, end: 2037 },
+      { key: "mid", label: "2038–2047 (SSI + reduced withdrawal)", start: 2038, end: 2047 },
+      { key: "late", label: "2048–2058 (higher withdrawal phase)", start: 2048, end: 2058 },
+    ];
+
+    return defs.map((d) => {
+      const r = rows.filter((row) => row.year >= d.start && row.year <= d.end);
+      const years = r.length || 1;
+      return {
+        label: d.label,
+        totalIncome: r.reduce((a, x) => a + x.totalIncome, 0),
+        totalTaxNL: r.reduce((a, x) => a + x.nlBox3Tax, 0),
+        totalTaxCH: r.reduce((a, x) => a + x.chTotalTax, 0),
+        totalWithdrawal: r.reduce((a, x) => a + x.withdrawal, 0),
+        avgWithdrawal: r.reduce((a, x) => a + x.withdrawal, 0) / years,
+        endingNL: r.at(-1)?.endingBalanceNL ?? 0,
+        endingCH: r.at(-1)?.endingBalanceCH ?? 0,
+      };
+    });
+  }, [rows]);
+
+  const totals = useMemo(() => ({
+    totalIncome: rows.reduce((a, x) => a + x.totalIncome, 0),
+    totalTaxNL: rows.reduce((a, x) => a + x.nlBox3Tax, 0),
+    totalTaxCH: rows.reduce((a, x) => a + x.chTotalTax, 0),
+    totalWithdrawal: rows.reduce((a, x) => a + x.withdrawal, 0),
+    avgWithdrawal: rows.reduce((a, x) => a + x.withdrawal, 0) / Math.max(1, rows.length),
+    endingNL: rows.at(-1)?.endingBalanceNL ?? 0,
+    endingCH: rows.at(-1)?.endingBalanceCH ?? 0,
+  }), [rows]);
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-[1500px] p-4 md:p-8">
-        <header className="mb-6 rounded-xl border border-amber-400/30 bg-slate-900 p-6">
-          <h1 className="text-2xl font-semibold text-amber-300">KCA Retirement Projection Calculator</h1>
-          <p className="mt-1 text-sm text-slate-300">
-            Switzerland (Zurich) vs Netherlands drawdown and tax scenario modeling.
-          </p>
-          <button
-            className="no-print mt-3 rounded bg-amber-400 px-3 py-1 text-sm font-semibold text-slate-900"
-            onClick={() => window.print()}
-          >
-            Print-Friendly Table
-          </button>
+    <main className="min-h-screen bg-slate-100 text-slate-900 print:bg-white">
+      <div className="mx-auto max-w-[1800px] px-3 py-4 md:px-6 md:py-6">
+        <header className="mb-4 rounded-lg border border-slate-300 bg-white p-4 print:border-0">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="text-xl font-semibold text-slate-900 md:text-2xl">Retirement Drawdown Calculator (CH vs NL)</h1>
+              <p className="mt-1 text-sm text-slate-600">Age 58 (2026) through age 90 (2058), complete side-by-side scenario modeling.</p>
+            </div>
+            <button onClick={() => window.print()} className="no-print rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white">Print</button>
+          </div>
+          <div className="mt-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+            US income tax is modeled as ~0 because margin interest deduction offsets dividend/interest income. European taxes are shown in detail.
+          </div>
         </header>
 
-        <section className="no-print mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg bg-slate-900 p-4">CH Total Taxes: <b>{fmtCurrency(metrics.chTotalTax)}</b></div>
-          <div className="rounded-lg bg-slate-900 p-4">NL Total Taxes: <b>{fmtCurrency(metrics.nlTotalTax)}</b></div>
-          <div className="rounded-lg bg-slate-900 p-4">Year Money Runs Out (CH/NL): <b>{metrics.chRunOut ?? "N/A"} / {metrics.nlRunOut ?? "N/A"}</b></div>
-          <div className="rounded-lg bg-slate-900 p-4">Avg Annual Tax (CH/NL): <b>{fmtCurrency(metrics.avgCh)} / {fmtCurrency(metrics.avgNl)}</b></div>
-          <div className="rounded-lg bg-slate-900 p-4 md:col-span-2 xl:col-span-4">Break-even year (NL cumulative taxes lower): <b>{metrics.breakEven ?? "No break-even"}</b></div>
+        <section className="no-print mb-4 rounded-lg border border-slate-300 bg-white">
+          <button
+            onClick={() => setInputsOpen((v) => !v)}
+            className="flex w-full items-center justify-between px-4 py-3 text-left font-semibold"
+          >
+            <span>Inputs</span>
+            <span>{inputsOpen ? "Hide" : "Show"}</span>
+          </button>
+
+          {inputsOpen ? (
+            <div className="grid gap-4 border-t border-slate-200 p-4 md:grid-cols-2 lg:grid-cols-4">
+              <InputField label="JPM FRN Balance" value={inputs.frnBalance} onChange={(v) => setInputs({ ...inputs, frnBalance: v })} />
+              <InputField label="JPM Equities Balance" value={inputs.equitiesBalance} onChange={(v) => setInputs({ ...inputs, equitiesBalance: v })} />
+              <InputField label="JPM Margin Loan" value={inputs.marginLoan} onChange={(v) => setInputs({ ...inputs, marginLoan: v })} />
+              <InputField label="ABN AMRO Balance" value={inputs.abnBalance} onChange={(v) => setInputs({ ...inputs, abnBalance: v })} />
+
+              <InputField label="FRN Interest Rate" value={inputs.frnRate} suffix="%" step={0.01} onChange={(v) => setInputs({ ...inputs, frnRate: v })} />
+              <InputField label="Dividend Yield" value={inputs.dividendYield} suffix="%" step={0.01} onChange={(v) => setInputs({ ...inputs, dividendYield: v })} />
+              <InputField label="Equity Growth Rate" value={inputs.equityGrowthRate} suffix="%" step={0.01} onChange={(v) => setInputs({ ...inputs, equityGrowthRate: v })} />
+              <InputField label="Margin Interest Rate" value={inputs.marginRate} suffix="%" step={0.001} onChange={(v) => setInputs({ ...inputs, marginRate: v })} />
+
+              <InputField label="ABN AMRO Return Rate" value={inputs.abnReturnRate} suffix="%" step={0.01} onChange={(v) => setInputs({ ...inputs, abnReturnRate: v })} />
+              <InputField label="Kelly 401k Balance" value={inputs.kelly401k} onChange={(v) => setInputs({ ...inputs, kelly401k: v })} />
+              <InputField label="Karl 401k Balance" value={inputs.karl401k} onChange={(v) => setInputs({ ...inputs, karl401k: v })} />
+              <InputField label="401k Growth Rate" value={inputs.k401kGrowthRate} suffix="%" step={0.01} onChange={(v) => setInputs({ ...inputs, k401kGrowthRate: v })} />
+
+              <InputField label="Karl Monthly SSI @70" value={inputs.karlSsiMonthly} onChange={(v) => setInputs({ ...inputs, karlSsiMonthly: v })} />
+              <InputField label="Kelly Monthly SSI @70" value={inputs.kellySsiMonthly} onChange={(v) => setInputs({ ...inputs, kellySsiMonthly: v })} />
+              <label className="grid gap-1 text-[13px]">
+                <span className="font-medium text-slate-700">SSI Solvency Haircut: {inputs.ssiHaircut}%</span>
+                <input type="range" min={50} max={100} value={inputs.ssiHaircut} onChange={(e) => setInputs({ ...inputs, ssiHaircut: Number(e.target.value) })} />
+              </label>
+              <label className="grid gap-1 text-[13px]">
+                <span className="font-medium text-slate-700">Liquidation JPM/ABN: {inputs.jpmWithdrawalShare}% / {100 - inputs.jpmWithdrawalShare}%</span>
+                <input type="range" min={0} max={100} value={inputs.jpmWithdrawalShare} onChange={(e) => setInputs({ ...inputs, jpmWithdrawalShare: Number(e.target.value) })} />
+              </label>
+
+              <label className="grid gap-1 text-[13px]">
+                <span className="font-medium text-slate-700">Year of move to Switzerland</span>
+                <select
+                  className="rounded border border-slate-300 px-2 py-1.5"
+                  value={inputs.moveYear ?? "never"}
+                  onChange={(e) => setInputs({ ...inputs, moveYear: e.target.value === "never" ? null : Number(e.target.value) })}
+                >
+                  <option value="never">Never</option>
+                  {Array.from({ length: 15 }).map((_, i) => {
+                    const y = 2026 + i;
+                    return <option key={y} value={y}>{y}</option>;
+                  })}
+                </select>
+              </label>
+              <InputField label="USD/CHF" value={inputs.usdChf} step={0.01} onChange={(v) => setInputs({ ...inputs, usdChf: v })} />
+              <InputField label="Zurich municipal multiplier" value={inputs.zurichMultiplier} step={0.01} onChange={(v) => setInputs({ ...inputs, zurichMultiplier: v })} />
+            </div>
+          ) : null}
         </section>
 
-        <section className="no-print mb-6 rounded-xl bg-slate-900 p-4">
-          <h2 className="mb-4 text-lg font-semibold text-amber-300">Inputs</h2>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <NumberInput label="Current Age" value={inputs.currentAge} min={40} max={80} onChange={(v) => setInputs({ ...inputs, currentAge: v })} />
-            <NumberInput label="Planning Horizon Age" value={inputs.horizonAge} min={70} max={100} onChange={(v) => setInputs({ ...inputs, horizonAge: v })} />
-            <NumberInput label="Annual Withdrawal" value={inputs.annualWithdrawal} min={0} max={800000} step={1000} onChange={(v) => setInputs({ ...inputs, annualWithdrawal: v })} />
-            <NumberInput label="JPM FRN" value={inputs.jpmFrn} min={0} max={10000000} step={1000} onChange={(v) => setInputs({ ...inputs, jpmFrn: v })} />
-            <NumberInput label="JPM Equities" value={inputs.jpmEquities} min={0} max={15000000} step={1000} onChange={(v) => setInputs({ ...inputs, jpmEquities: v })} />
-            <NumberInput label="JPM Margin Loan (negative)" value={inputs.jpmMargin} min={-12000000} max={0} step={1000} onChange={(v) => setInputs({ ...inputs, jpmMargin: v })} />
-            <NumberInput label="ABN AMRO Balance" value={inputs.abnBalance} min={0} max={5000000} step={1000} onChange={(v) => setInputs({ ...inputs, abnBalance: v })} />
-            <NumberInput label="FRN Interest Rate %" value={inputs.frnRate} min={0} max={12} step={0.01} onChange={(v) => setInputs({ ...inputs, frnRate: v })} />
-            <NumberInput label="Dividend Yield %" value={inputs.dividendRate} min={0} max={12} step={0.01} onChange={(v) => setInputs({ ...inputs, dividendRate: v })} />
-            <NumberInput label="Equity Growth Rate %" value={inputs.equityGrowthRate} min={-10} max={15} step={0.01} onChange={(v) => setInputs({ ...inputs, equityGrowthRate: v })} />
-            <NumberInput label="Margin Interest Rate %" value={inputs.marginRate} min={0} max={15} step={0.001} onChange={(v) => setInputs({ ...inputs, marginRate: v })} />
-            <NumberInput label="ABN Return Rate %" value={inputs.abnReturnRate} min={-5} max={10} step={0.01} onChange={(v) => setInputs({ ...inputs, abnReturnRate: v })} />
-            <NumberInput label="Annual KCA Income" value={inputs.annualKcaIncome} min={0} max={1000000} step={1000} onChange={(v) => setInputs({ ...inputs, annualKcaIncome: v })} />
-            <NumberInput label="KCA Income End Age" value={inputs.kcaIncomeEndAge} min={58} max={90} onChange={(v) => setInputs({ ...inputs, kcaIncomeEndAge: v })} />
-            <NumberInput label="Karl SSI Monthly @70" value={inputs.karlSsiMonthly} min={0} max={8000} step={50} onChange={(v) => setInputs({ ...inputs, karlSsiMonthly: v })} />
-            <NumberInput label="Kelly SSI Monthly @70" value={inputs.kellySsiMonthly} min={0} max={8000} step={50} onChange={(v) => setInputs({ ...inputs, kellySsiMonthly: v })} />
-            <NumberInput label="SSI Solvency Haircut %" value={inputs.ssiHaircutPct} min={50} max={100} step={1} onChange={(v) => setInputs({ ...inputs, ssiHaircutPct: v })} />
-            <NumberInput label="Kelly 401k" value={inputs.kelly401k} min={0} max={4000000} step={1000} onChange={(v) => setInputs({ ...inputs, kelly401k: v })} />
-            <NumberInput label="Karl 401k" value={inputs.karl401k} min={0} max={4000000} step={1000} onChange={(v) => setInputs({ ...inputs, karl401k: v })} />
-            <NumberInput label="401k Growth Rate %" value={inputs.k401kGrowthRate} min={0} max={12} step={0.01} onChange={(v) => setInputs({ ...inputs, k401kGrowthRate: v })} />
-            <NumberInput label="Move to CH Year" value={inputs.moveToChYear} min={2026} max={2050} onChange={(v) => setInputs({ ...inputs, moveToChYear: v })} />
-            <NumberInput label="USD/CHF" value={inputs.usdChf} min={0.5} max={1.2} step={0.01} onChange={(v) => setInputs({ ...inputs, usdChf: v })} />
-            <NumberInput label="Zurich Municipal Multiplier" value={inputs.zurichMultiplier} min={1} max={1.5} step={0.01} onChange={(v) => setInputs({ ...inputs, zurichMultiplier: v })} />
-            <NumberInput label="NL Box 3 Deemed Return Investments %" value={inputs.nlBox3InvestmentRate} min={0} max={12} step={0.01} onChange={(v) => setInputs({ ...inputs, nlBox3InvestmentRate: v })} />
-            <NumberInput label="NL Box 3 Deemed Return Debts %" value={inputs.nlBox3DebtRate} min={0} max={10} step={0.01} onChange={(v) => setInputs({ ...inputs, nlBox3DebtRate: v })} />
-            <NumberInput label="NL Box 3 Transition Year" value={inputs.nlBox3TransitionYear} min={2026} max={2050} onChange={(v) => setInputs({ ...inputs, nlBox3TransitionYear: v })} />
+        <section className="mb-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-lg border border-slate-300 bg-white p-3">
+            <div className="text-xs text-slate-500">Solved base withdrawal</div>
+            <div className="text-lg font-semibold">{usd(baseWithdrawal)}</div>
+            <div className="text-xs text-slate-500">Curve: 100% / 90% / 102.6%</div>
+          </div>
+          <div className="rounded-lg border border-slate-300 bg-white p-3">
+            <div className="text-xs text-slate-500">Ending balance at age 90 (NL)</div>
+            <div className="text-lg font-semibold">{usd(totals.endingNL)}</div>
+          </div>
+          <div className="rounded-lg border border-slate-300 bg-white p-3">
+            <div className="text-xs text-slate-500">Ending balance at age 90 (CH)</div>
+            <div className="text-lg font-semibold">{usd(totals.endingCH)}</div>
           </div>
         </section>
 
-        <section className="mb-6 rounded-xl bg-white p-4 text-slate-900">
-          <h2 className="mb-3 text-lg font-semibold text-slate-900">Ending Balance Projection</h2>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="year" />
-                <YAxis tickFormatter={(v) => `${Math.round(v / 1_000_000)}M`} />
-                <Tooltip formatter={(value: number | string | undefined) => fmtCurrency(Number(value ?? 0))} />
-                <Legend />
-                <Line type="monotone" dataKey="CH" stroke="#b45309" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="NL" stroke="#0f766e" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+        <section className="no-print mb-4 flex gap-2">
+          <button onClick={() => setTab("summary")} className={`rounded px-3 py-1.5 text-sm ${tab === "summary" ? "bg-slate-900 text-white" : "bg-white border border-slate-300"}`}>Summary</button>
+          <button onClick={() => setTab("detail")} className={`rounded px-3 py-1.5 text-sm ${tab === "detail" ? "bg-slate-900 text-white" : "bg-white border border-slate-300"}`}>Detail</button>
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-2">
-          {[
-            { title: "CH (Zurich)", rows: chRows },
-            { title: "NL (Netherlands)", rows: nlRows },
-          ].map((s) => (
-            <div key={s.title} className="overflow-x-auto rounded-xl bg-white p-3 text-slate-900">
-              <h3 className="mb-2 text-lg font-semibold">{s.title}</h3>
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr className="bg-slate-100 text-left">
-                    {[
-                      "Age",
-                      "Year",
-                      "Beginning Balance",
-                      "FRN Interest",
-                      "Dividends",
-                      "Equity Growth",
-                      "Margin Interest",
-                      "KCA Income",
-                      "SSI",
-                      "Tax",
-                      "Withdrawals",
-                      "Ending Balance",
-                    ].map((h) => (
-                      <th key={h} className="px-2 py-2">{h}</th>
+        {(tab === "summary" || typeof window === "undefined") && (
+          <section className="mb-6 space-y-4">
+            <div className="overflow-x-auto rounded-lg border border-slate-300 bg-white">
+              <table className="min-w-full text-[13px]">
+                <thead className="bg-slate-900 text-white">
+                  <tr>
+                    {["Band", "Total Income", "Total Tax NL", "Total Tax CH", "Total Withdrawals", "Avg Annual Withdrawal", "Ending Balance NL", "Ending Balance CH"].map((h) => (
+                      <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {s.rows.map((r) => (
-                    <tr key={`${s.title}-${r.year}`} className={getStatusClass(r, inputs.annualWithdrawal)}>
-                      <td className="px-2 py-1">{r.age}</td>
-                      <td className="px-2 py-1">{r.year}</td>
-                      <td className="px-2 py-1">{fmtCurrency(r.beginningBalance)}</td>
-                      <td className="px-2 py-1">{fmtCurrency(r.frnInterest)}</td>
-                      <td className="px-2 py-1">{fmtCurrency(r.dividends)}</td>
-                      <td className="px-2 py-1">{fmtCurrency(r.equityGrowth)}</td>
-                      <td className="px-2 py-1">{fmtCurrency(r.marginInterest)}</td>
-                      <td className="px-2 py-1">{fmtCurrency(r.kcaIncome)}</td>
-                      <td className="px-2 py-1">{fmtCurrency(r.ssi + r.k401kWithdrawal)}</td>
-                      <td className="px-2 py-1" title={r.taxBreakdown}>{fmtCurrency(r.tax)}</td>
-                      <td className="px-2 py-1">{fmtCurrency(r.withdrawals)}</td>
-                      <td className="px-2 py-1 font-semibold">{fmtCurrency(r.endingBalance)}</td>
+                  {bands.map((b) => (
+                    <tr key={b.label} className="border-t border-slate-200">
+                      <td className="px-3 py-2 font-medium">{b.label}</td>
+                      <td className="px-3 py-2">{usd(b.totalIncome)}</td>
+                      <td className="px-3 py-2">{usd(b.totalTaxNL)}</td>
+                      <td className="px-3 py-2">{usd(b.totalTaxCH)}</td>
+                      <td className="px-3 py-2">{usd(b.totalWithdrawal)}</td>
+                      <td className="px-3 py-2">{usd(b.avgWithdrawal)}</td>
+                      <td className="px-3 py-2">{usd(b.endingNL)}</td>
+                      <td className="px-3 py-2">{usd(b.endingCH)}</td>
                     </tr>
                   ))}
+                  <tr className="border-t-2 border-slate-900 bg-slate-50 font-semibold">
+                    <td className="px-3 py-2">Lifetime Total</td>
+                    <td className="px-3 py-2">{usd(totals.totalIncome)}</td>
+                    <td className="px-3 py-2">{usd(totals.totalTaxNL)}</td>
+                    <td className="px-3 py-2">{usd(totals.totalTaxCH)}</td>
+                    <td className="px-3 py-2">{usd(totals.totalWithdrawal)}</td>
+                    <td className="px-3 py-2">{usd(totals.avgWithdrawal)}</td>
+                    <td className="px-3 py-2">{usd(totals.endingNL)}</td>
+                    <td className="px-3 py-2">{usd(totals.endingCH)}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
-          ))}
-        </section>
+
+            <div className="h-80 rounded-lg border border-slate-300 bg-white p-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={rows.map((r) => ({ year: r.year, NL: r.endingBalanceNL, CH: r.endingBalanceCH }))}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="year" />
+                  <YAxis tickFormatter={(v) => `${Math.round(v / 1_000_000)}M`} />
+                  <Tooltip formatter={(v: number | string | undefined) => usd(Number(v ?? 0))} />
+                  <Legend />
+                  <Line dataKey="NL" stroke="#1d4ed8" strokeWidth={2} dot={false} />
+                  <Line dataKey="CH" stroke="#0f766e" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+        )}
+
+        {tab === "detail" && (
+          <section className="overflow-x-auto rounded-lg border border-slate-300 bg-white">
+            <table className="min-w-[2500px] border-collapse text-[13px]">
+              <thead>
+                <tr className="bg-slate-900 text-white">
+                  {[
+                    "Age", "Year", "Karl SSI", "Kelly SSI", "Kelly 401k Bal", "Karl 401k Bal", "FRN Bal", "FRN Interest", "Equity Bal", "Dividends", "Eq Growth", "Margin Bal", "Margin Int", "ABN Bal", "ABN Earnings", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Net Wealth CHF", "CH: Cantonal Basic Tax", "CH: Municipal Tax", "CH: Total Wealth Tax CHF", "CH: Wealth Tax USD", "CH: Investment Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
+                  ].map((h, i) => (
+                    <th
+                      key={h}
+                      className={`border-b border-slate-700 px-2 py-2 text-left font-medium ${i === 0 ? "sticky left-0 z-20 bg-slate-900" : ""} ${i === 1 ? "sticky left-[56px] z-20 bg-slate-900" : ""}`}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.year} className={`${rowStyle(r)} border-t border-slate-200`}>
+                    <td className="sticky left-0 z-10 w-14 bg-inherit px-2 py-1">{r.age}</td>
+                    <td className="sticky left-[56px] z-10 w-20 bg-inherit px-2 py-1">{r.year}</td>
+                    <td className="px-2 py-1">{usd(r.karlSsi)}</td>
+                    <td className="px-2 py-1">{usd(r.kellySsi)}</td>
+                    <td className="px-2 py-1">{usd(r.kelly401kBal)}</td>
+                    <td className="px-2 py-1">{usd(r.karl401kBal)}</td>
+                    <td className="px-2 py-1">{usd(r.frnBal)}</td>
+                    <td className="px-2 py-1">{usd(r.frnInterest)}</td>
+                    <td className="px-2 py-1">{usd(r.equityBal)}</td>
+                    <td className="px-2 py-1">{usd(r.dividends)}</td>
+                    <td className="px-2 py-1">{usd(r.eqGrowth)}</td>
+                    <td className="px-2 py-1">{usd(r.marginBal)}</td>
+                    <td className="px-2 py-1">{usd(r.marginInt)}</td>
+                    <td className="px-2 py-1">{usd(r.abnBal)}</td>
+                    <td className="px-2 py-1">{usd(r.abnEarnings)}</td>
+                    <td className="px-2 py-1">{usd(r.nlDeemedOrActual)}</td>
+                    <td className="px-2 py-1">{usd(r.nlMarginDeduction)}</td>
+                    <td className="px-2 py-1">{usd(r.nlAllowance)}</td>
+                    <td className="px-2 py-1">{usd(r.nlTaxable)}</td>
+                    <td className="px-2 py-1">{pct(r.nlTaxRate)}</td>
+                    <td className="px-2 py-1">{usd(r.nlBox3Tax)}</td>
+                    <td className="px-2 py-1">{usd(r.nlFtcCredit)}</td>
+                    <td className="px-2 py-1">{usd(r.chNetWealthUsd)}</td>
+                    <td className="px-2 py-1">{Math.round(r.chNetWealthChf).toLocaleString("en-US")}</td>
+                    <td className="px-2 py-1">{Math.round(r.chCantonalBasicTax).toLocaleString("en-US")}</td>
+                    <td className="px-2 py-1">{Math.round(r.chMunicipalTax).toLocaleString("en-US")}</td>
+                    <td className="px-2 py-1">{Math.round(r.chTotalWealthTaxChf).toLocaleString("en-US")}</td>
+                    <td className="px-2 py-1">{usd(r.chTotalWealthTaxUsd)}</td>
+                    <td className="px-2 py-1">{usd(r.chInvestmentIncome)}</td>
+                    <td className="px-2 py-1">{usd(r.chIncomeTax)}</td>
+                    <td className="px-2 py-1">{usd(r.chTotalTax)}</td>
+                    <td className="px-2 py-1">{usd(r.totalIncome)}</td>
+                    <td className="px-2 py-1">{usd(r.withdrawal)}</td>
+                    <td className="px-2 py-1 font-semibold">{usd(r.endingBalanceNL)}</td>
+                    <td className="px-2 py-1 font-semibold">{usd(r.endingBalanceCH)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
       </div>
     </main>
   );
