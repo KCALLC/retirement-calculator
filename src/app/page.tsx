@@ -313,7 +313,7 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
     }
 
     const endingBalance = frn + eq + abn + kelly401k + karl401k - margin;
-    const totalIncome = frnInterest + dividends - marginInt + karlSsi + kellySsi;
+    const totalIncome = frnInterest + dividends - marginInt + karlSsi + kellySsi + kelly401kWithdrawal + karl401kWithdrawal;
 
     results.push({ tax, frnBal: frn, eqBal: eq, marginBal: margin, abnBal: abn, kelly401k, karl401k, kelly401kWithdrawal, karl401kWithdrawal, endingBalance, frnInterest, dividends, eqGrowth, marginInt, abnEarnings, karlSsi, kellySsi, totalIncome, withdrawal, nlDeemedOrActual, nlMarginDeduction, nlTaxable, chNetWealthUsd, chNetWealthChf, chCantonalBasicTax, chMunicipalTax, chTotalWealthTaxChf, chWealthTaxUsd, chInvestmentIncome, chIncomeTax });
   }
@@ -493,8 +493,9 @@ export default function Home() {
             <button onClick={() => window.print()} className="no-print rounded bg-slate-900 px-3 py-2 text-sm font-medium text-white">Print</button>
           </div>
           <div className="mt-3 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-            US income tax is modeled as ~0 because margin interest deduction offsets dividend/interest income. European taxes are shown in detail.
-            <br/>NL Box 3 (2026-2027): Uses deemed-return system — taxes a fictional 6.04% return on investments regardless of actual income. This makes the tax appear high relative to net cash income. From 2028+, the new regime taxes actual returns (much more favorable with margin deduction).
+            US income tax excluded — margin interest deduction offsets dividend/interest/401k income (large carryover from prior years). Move modeled at end of calendar year (no split-year). European taxes shown in detail.
+            <br/>NL Box 3 (2026-2027): Deemed-return system — taxes a fictional 6.04% return regardless of actual income. From 2028+, actual-return regime (much more favorable with margin deduction).
+            <br/>401k withdrawals: 2030-2037 (8-year PMT annuity depleting both accounts to $0). No US tax modeled on withdrawals.
           </div>
         </header>
 
@@ -602,7 +603,7 @@ export default function Home() {
               <table className="min-w-full text-[13px]">
                 <thead className="bg-slate-900 text-white">
                   <tr>
-                    {["Age", "Year", "Dividend Income", "Interest Income", "Margin Int Paid", "SSI Income", "Net Income", "Tax (NL)", "Tax (CH)", "Withdrawal", "Ending Bal (NL)", "Ending Bal (CH)"].map((h) => (
+                    {["Age", "Year", "Dividend Income", "Interest Income", "401k Income", "Margin Int Paid", "SSI Income", "Net Income", "Tax (NL)", "Tax (CH)", "Withdrawal", "Ending Bal (NL)", "Ending Bal (CH)"].map((h) => (
                       <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -614,6 +615,7 @@ export default function Home() {
                       <td className="px-3 py-2">{r.year}</td>
                       <td className="px-3 py-2">{usd(r.dividends)}</td>
                       <td className="px-3 py-2">{usd(r.frnInterest)}</td>
+                      <td className="px-3 py-2">{r.kelly401kIncome + r.karl401kIncome > 0 ? usd(r.kelly401kIncome + r.karl401kIncome) : '—'}</td>
                       <td className="px-3 py-2">{usd(-r.marginInt)}</td>
                       <td className="px-3 py-2">{usd(r.karlSsi + r.kellySsi)}</td>
                       <td className="px-3 py-2 font-medium">{usd(r.totalIncome)}</td>
@@ -628,6 +630,7 @@ export default function Home() {
                     <td className="px-3 py-2" colSpan={2}>Lifetime Total</td>
                     <td className="px-3 py-2">{usd(rows.reduce((a, r) => a + r.dividends, 0))}</td>
                     <td className="px-3 py-2">{usd(rows.reduce((a, r) => a + r.frnInterest, 0))}</td>
+                    <td className="px-3 py-2">{usd(rows.reduce((a, r) => a + r.kelly401kIncome + r.karl401kIncome, 0))}</td>
                     <td className="px-3 py-2">{usd(-rows.reduce((a, r) => a + r.marginInt, 0))}</td>
                     <td className="px-3 py-2">{usd(rows.reduce((a, r) => a + r.karlSsi + r.kellySsi, 0))}</td>
                     <td className="px-3 py-2">{usd(rows.reduce((a, r) => a + r.totalIncome, 0))}</td>
