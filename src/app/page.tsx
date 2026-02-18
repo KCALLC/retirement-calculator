@@ -216,9 +216,15 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
     abn += abnEarnings;
     kelly401k += kelly401kEarn;
     karl401k += karl401kEarn;
-    margin += marginInt;
 
-    // Tax is paid — increases margin (it's a cash outflow funded same as withdrawals)
+    // JPM cash flows: income credits reduce margin, interest increases it
+    // FRN interest + dividends flow into JPM account (reduce margin)
+    // Margin interest capitalizes (increases margin)
+    margin += marginInt;       // Interest charged
+    margin -= frnInterest;     // FRN interest credited to account
+    margin -= dividends;       // Dividends credited to account
+
+    // Tax is paid from portfolio (same 70/30 split)
     margin += tax * (inputs.jpmWithdrawalShare / 100);
     abn -= tax * (1 - inputs.jpmWithdrawalShare / 100);
     abn = Math.max(0, abn);
