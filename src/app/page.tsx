@@ -351,6 +351,13 @@ function runOneScenario(
 
       margin += jpmDraw;
       abn = Math.max(0, abn - abnDraw);
+      
+      // Any unfunded shortfall still must come from somewhere — force onto margin
+      // (this means margin can exceed the cap temporarily; the cap enforcement below will handle it)
+      const funded = jpmDraw + abnDraw;
+      if (funded < shortfall) {
+        margin += (shortfall - funded);
+      }
     } else {
       margin = Math.max(0, margin - netCashFlow);
     }
