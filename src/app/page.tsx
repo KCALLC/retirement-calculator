@@ -1029,7 +1029,7 @@ export default function Home() {
                       <th className="px-2 py-2 text-right">Value</th>
                       <th className="px-2 py-2 text-right">Cost Basis</th>
                       <th className="px-2 py-2 text-right">Unrealized Gain</th>
-                      <th className="px-2 py-2 text-right">Gain %</th>
+                      <th className="px-2 py-2 text-right">Tax Cost %</th>
                       <th className="px-2 py-2 text-center">Kind</th>
                       <th className="px-2 py-2 text-center">Hold</th>
                       <th className="px-2 py-2 text-center">2026</th>
@@ -1068,7 +1068,10 @@ export default function Home() {
                               {usd(lot.kind === "frn" && frnBasisOverride ? lot.value : lot.gain)}
                             </td>
                             <td className={`px-2 py-1.5 text-right ${lot.gain < 0 ? "text-red-600" : ""}`}>
-                              {lot.cost !== 0 ? `${((lot.gain / lot.cost) * 100).toFixed(1)}%` : "—"}
+                              {(() => {
+                                const effectiveGain = lot.kind === "frn" && frnBasisOverride ? lot.value : lot.gain;
+                                return lot.value !== 0 ? `${((effectiveGain / lot.value) * 100).toFixed(1)}%` : "—";
+                              })()}
                             </td>
                             <td className="px-2 py-1.5 text-center text-xs uppercase">{lot.kind}</td>
                             {(["hold", 2026, 2027, 2028, 2029, 2030] as const).map((year) => (
