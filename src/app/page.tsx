@@ -211,44 +211,55 @@ function runOneScenario(inputs: Inputs, baseWithdrawal: number, scenario: 'NL' |
 
     const withdrawal = baseWithdrawal * getCurveMultiplier(age);
 
-    // Apply growth
+    // === CASH FLOW WATERFALL ===
+    // 1. Total cash income (generated without reducing any balances)
+    const totalCashIncome = karlSsi + kellySsi + kelly401kEarn + karl401kEarn + frnInterest + dividends;
+
+    // 2. Subtract tax and withdrawal
+    const netCashFlow = totalCashIncome - tax - withdrawal;
+
+    // 3. If negative: fund the shortfall 70% from margin, 30% from ABN
+    //    If positive: use surplus to reduce margin balance
+    const jpmShare = inputs.jpmWithdrawalShare / 100;
+    if (netCashFlow < 0) {
+      const shortfall = -netCashFlow;
+      let jpmDraw = shortfall * jpmShare;
+      let abnDraw = shortfall * (1 - jpmShare);
+
+      // Margin cap: can't exceed 90% FRN + 50% equities
+      const marginCap = frn * 0.9 + eq * 0.5;
+      if (margin + jpmDraw > marginCap) {
+        const maxAdd = Math.max(0, marginCap - margin);
+        jpmDraw = maxAdd;
+        abnDraw = shortfall - jpmDraw;
+      }
+      // ABN can't go negative
+      if (abnDraw > abn) {
+        abnDraw = Math.max(0, abn);
+        const remaining = shortfall - jpmDraw - abnDraw;
+        const room = Math.max(0, (frn * 0.9 + eq * 0.5) - margin - jpmDraw);
+        jpmDraw += Math.min(remaining, room);
+      }
+
+      margin += jpmDraw;
+      abn = Math.max(0, abn - abnDraw);
+    } else {
+      // Surplus: pay down margin
+      margin = Math.max(0, margin - netCashFlow);
+    }
+
+    // === BALANCE GROWTH (independent of cash flows) ===
+    // Margin interest capitalizes
+    margin += marginInt;
+    // Equity grows by growth rate
     eq += eqGrowth;
+    // ABN grows by dividend yield + equity growth rate combined
     abn += abnEarnings;
+    // 401k compounds
     kelly401k += kelly401kEarn;
     karl401k += karl401kEarn;
+    // FRN balance stays constant (interest was cash, already counted above)
 
-    // JPM cash flows: income credits reduce margin, interest increases it
-    // FRN interest + dividends flow into JPM account (reduce margin)
-    // Margin interest capitalizes (increases margin)
-    margin += marginInt;       // Interest charged
-    margin -= frnInterest;     // FRN interest credited to account
-    margin -= dividends;       // Dividends credited to account
-
-    // Tax is paid from portfolio (same 70/30 split)
-    margin += tax * (inputs.jpmWithdrawalShare / 100);
-    abn -= tax * (1 - inputs.jpmWithdrawalShare / 100);
-    abn = Math.max(0, abn);
-
-    // Withdrawals: 70% from margin, 30% from ABN
-    const jpmShare = inputs.jpmWithdrawalShare / 100;
-    let jpmDraw = withdrawal * jpmShare;
-    let abnDraw = withdrawal * (1 - jpmShare);
-
-    const marginCap = frn * 0.9 + eq * 0.5;
-    if (margin + jpmDraw > marginCap) {
-      const maxAdd = Math.max(0, marginCap - margin);
-      jpmDraw = maxAdd;
-      abnDraw = withdrawal - jpmDraw;
-    }
-    if (abnDraw > abn) {
-      abnDraw = Math.max(0, abn);
-      const shortfall = withdrawal - jpmDraw - abnDraw;
-      const room = Math.max(0, marginCap - margin - jpmDraw);
-      jpmDraw += Math.min(shortfall, room);
-    }
-
-    margin += jpmDraw;
-    abn = Math.max(0, abn - abnDraw);
     frn = Math.max(0, frn);
     eq = Math.max(0, eq);
 
