@@ -248,11 +248,11 @@ function runOneScenario(
       capGainsTax += liq.tax;
       liquidationProceeds += liq.proceeds - liq.tax;
       
-      // Remove from pools
+      // Remove from pools — use proceeds (grown value) for equity, value for FRN
       if (liq.kind === "equity") {
-        eq = Math.max(0, eq - liq.value);
+        eq = Math.max(0, eq - liq.proceeds);
       } else {
-        frn = Math.max(0, frn - liq.value);
+        frn = Math.max(0, frn - liq.proceeds);
       }
     }
     
@@ -562,7 +562,7 @@ export default function Home() {
         proceeds,
         tax,
         kind: lot.kind,
-        value: lot.kind === "equity" ? lot.value : lot.value, // Current value to remove from pools
+        value: proceeds, // Grown value at time of sale
       });
       map.set(year, events);
     });
@@ -674,7 +674,7 @@ export default function Home() {
             const gain = proceeds - basis;
             const tax = Math.max(0, gain) * effectiveLtcgRate;
             const events = testMap.get(assignedYear) || [];
-            events.push({ lotIndex: idx, proceeds, tax, kind: lot.kind, value: lot.value });
+            events.push({ lotIndex: idx, proceeds, tax, kind: lot.kind, value: proceeds });
             testMap.set(assignedYear, events);
           });
           
