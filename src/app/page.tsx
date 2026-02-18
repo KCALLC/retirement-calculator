@@ -67,6 +67,8 @@ type YearRow = {
   chInvestmentIncome: number;
   chIncomeTax: number;
   chTotalTax: number;
+  liquidationProceeds: number;
+  capGainsTax: number;
   totalIncome: number;
   withdrawal: number;
   endingBalanceNL: number;
@@ -224,7 +226,7 @@ function runOneScenario(
   ftcOffsetEnabled?: boolean,
   ltcgRate?: number
 ) {
-  const results: { tax: number; frnBal: number; eqBal: number; marginBal: number; abnBal: number; kelly401k: number; karl401k: number; kelly401kWithdrawal: number; karl401kWithdrawal: number; endingBalance: number; frnInterest: number; dividends: number; eqGrowth: number; marginInt: number; abnEarnings: number; karlSsi: number; kellySsi: number; totalIncome: number; withdrawal: number; nlDeemedOrActual: number; nlMarginDeduction: number; nlTaxable: number; chNetWealthUsd: number; chNetWealthChf: number; chCantonalBasicTax: number; chMunicipalTax: number; chTotalWealthTaxChf: number; chWealthTaxUsd: number; chInvestmentIncome: number; chIncomeTax: number; capGainsTax: number; box3TaxForFTC: number }[] = [];
+  const results: { tax: number; frnBal: number; eqBal: number; marginBal: number; abnBal: number; kelly401k: number; karl401k: number; kelly401kWithdrawal: number; karl401kWithdrawal: number; endingBalance: number; frnInterest: number; dividends: number; eqGrowth: number; marginInt: number; abnEarnings: number; karlSsi: number; kellySsi: number; totalIncome: number; withdrawal: number; nlDeemedOrActual: number; nlMarginDeduction: number; nlTaxable: number; chNetWealthUsd: number; chNetWealthChf: number; chCantonalBasicTax: number; chMunicipalTax: number; chTotalWealthTaxChf: number; chWealthTaxUsd: number; chInvestmentIncome: number; chIncomeTax: number; capGainsTax: number; box3TaxForFTC: number; liquidationProceeds: number }[] = [];
 
   let frn = inputs.frnBalance;
   let eq = inputs.equitiesBalance;
@@ -387,7 +389,7 @@ function runOneScenario(
     const endingBalance = frn + eq + abn + kelly401k + karl401k - margin;
     const totalIncome = frnInterest + dividends - marginInt + karlSsi + kellySsi + kelly401kWithdrawal + karl401kWithdrawal;
 
-    results.push({ tax, frnBal: frn, eqBal: eq, marginBal: margin, abnBal: abn, kelly401k, karl401k, kelly401kWithdrawal, karl401kWithdrawal, endingBalance, frnInterest, dividends, eqGrowth, marginInt, abnEarnings, karlSsi, kellySsi, totalIncome, withdrawal, nlDeemedOrActual, nlMarginDeduction, nlTaxable, chNetWealthUsd, chNetWealthChf, chCantonalBasicTax, chMunicipalTax, chTotalWealthTaxChf, chWealthTaxUsd, chInvestmentIncome, chIncomeTax, capGainsTax, box3TaxForFTC });
+    results.push({ tax, frnBal: frn, eqBal: eq, marginBal: margin, abnBal: abn, kelly401k, karl401k, kelly401kWithdrawal, karl401kWithdrawal, endingBalance, frnInterest, dividends, eqGrowth, marginInt, abnEarnings, karlSsi, kellySsi, totalIncome, withdrawal, nlDeemedOrActual, nlMarginDeduction, nlTaxable, chNetWealthUsd, chNetWealthChf, chCantonalBasicTax, chMunicipalTax, chTotalWealthTaxChf, chWealthTaxUsd, chInvestmentIncome, chIncomeTax, capGainsTax, box3TaxForFTC, liquidationProceeds });
   }
   return results;
 }
@@ -427,6 +429,8 @@ function runProjection(
       chTotalWealthTaxUsd: ch.chWealthTaxUsd,
       chInvestmentIncome: ch.chInvestmentIncome, chIncomeTax: ch.chIncomeTax,
       chTotalTax: ch.tax,
+      liquidationProceeds: nl.liquidationProceeds,
+      capGainsTax: nl.capGainsTax,
       totalIncome: nl.totalIncome, withdrawal: nl.withdrawal,
       endingBalanceNL: nl.endingBalance, endingBalanceCH: ch.endingBalance,
     });
@@ -442,7 +446,7 @@ function solveBaseWithdrawal(
   ltcgRate?: number
 ) {
   let low = 0;
-  let high = 2_000_000;
+  let high = 5_000_000;
   let best = 0;
   for (let i = 0; i < 80; i++) {
     const mid = (low + high) / 2;
@@ -913,7 +917,7 @@ export default function Home() {
               <thead className="sticky top-0 z-30">
                 <tr className="bg-slate-900 text-white">
                   {[
-                    "Age", "Year", "Karl SSI Income", "Kelly SSI Income", "Kelly 401k Bal", "Kelly 401k Inc", "Karl 401k Bal", "Karl 401k Inc", "FRN Bal", "FRN Interest", "JPM Equity Bal", "JPM Dividends", "JPM Equity Growth", "JPM Margin Loan Bal", "Margin %", "Margin Int", "ABN Bal", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Wealth Tax USD", "CH: Net Inv Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
+                    "Age", "Year", "Karl SSI Income", "Kelly SSI Income", "Kelly 401k Bal", "Kelly 401k Inc", "Karl 401k Bal", "Karl 401k Inc", "FRN Bal", "FRN Interest", "JPM Equity Bal", "JPM Dividends", "JPM Equity Growth", "JPM Margin Loan Bal", "Margin %", "Margin Int", "ABN Bal", "Liq Proceeds", "Cap Gains Tax", "NL: Deemed/Actual", "NL: Margin Deduction", "NL: Allowance", "NL: Box3 Taxable", "NL: Tax Rate", "NL: Box3 Tax", "NL: FTC Credit", "CH: Net Wealth USD", "CH: Wealth Tax USD", "CH: Net Inv Income", "CH: Income Tax", "CH: Total Tax", "Total Income", "Withdrawal", "Ending Balance (NL)", "Ending Balance (CH)",
                   ].map((h, i) => (
                     <th
                       key={h}
@@ -944,6 +948,8 @@ export default function Home() {
                     <td className="px-2 py-1">{((r.marginBal / (r.frnBal + r.equityBal)) * 100).toFixed(1)}%</td>
                     <td className="px-2 py-1">{usd(-r.marginInt)}</td>
                     <td className="px-2 py-1">{usd(r.abnBal)}</td>
+                    <td className="px-2 py-1">{r.liquidationProceeds > 0 ? usd(r.liquidationProceeds) : '—'}</td>
+                    <td className="px-2 py-1 text-red-600">{r.capGainsTax > 0 ? usd(-r.capGainsTax) : '—'}</td>
                     <td className="px-2 py-1">{usd(r.nlDeemedOrActual)}</td>
                     <td className="px-2 py-1">{usd(r.nlMarginDeduction)}</td>
                     <td className="px-2 py-1">{usd(r.nlAllowance)}</td>
